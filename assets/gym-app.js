@@ -221,6 +221,70 @@ function bodyDiagram(muscleGroup) {
   `;
 }
 
+// ---------------------------------------------------------------------------
+// Animación esquemática del patrón de movimiento (SVG + CSS, en bucle)
+// ---------------------------------------------------------------------------
+function barbellSVG(cls) {
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <line x1="20" y1="72" x2="140" y2="72" stroke="#2a303a" stroke-width="3" />
+    <g class="${cls}">
+      <rect x="18" y="36" width="10" height="26" rx="2" fill="#5b8def" />
+      <rect x="132" y="36" width="10" height="26" rx="2" fill="#5b8def" />
+      <line x1="28" y1="49" x2="132" y2="49" stroke="#9aa4b2" stroke-width="4" />
+    </g>
+  </svg>`;
+}
+function squatSVG(cls) {
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <line x1="20" y1="82" x2="140" y2="82" stroke="#2a303a" stroke-width="3" />
+    <g class="${cls}">
+      <circle cx="80" cy="18" r="10" fill="#5b8def" />
+      <rect x="68" y="30" width="24" height="26" rx="6" fill="#9aa4b2" />
+      <line x1="72" y1="56" x2="65" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
+      <line x1="88" y1="56" x2="95" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
+    </g>
+  </svg>`;
+}
+function raiseSVG(cls) {
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <circle cx="80" cy="18" r="10" fill="#5b8def" />
+    <rect x="68" y="30" width="24" height="40" rx="8" fill="#3a4150" />
+    <line x1="80" y1="38" x2="80" y2="76" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" class="${cls}" />
+  </svg>`;
+}
+function coreSVG(cls) {
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <line x1="20" y1="70" x2="140" y2="70" stroke="#2a303a" stroke-width="3" />
+    <g class="${cls}">
+      <rect x="35" y="46" width="90" height="16" rx="8" fill="#5b8def" />
+      <circle cx="30" cy="54" r="9" fill="#9aa4b2" />
+    </g>
+  </svg>`;
+}
+function cardioSVG(cls) {
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <circle cx="80" cy="45" r="26" fill="none" stroke="#5b8def" stroke-width="6"
+      stroke-linecap="round" stroke-dasharray="120 40" class="${cls}" />
+  </svg>`;
+}
+const MOVEMENT_DEFS = {
+  push: { label: 'Empuje', svg: () => barbellSVG('anim-push') },
+  pull: { label: 'Tirón', svg: () => barbellSVG('anim-pull') },
+  squat: { label: 'Flexión de piernas / cadera', svg: () => squatSVG('anim-squat') },
+  raise: { label: 'Elevación', svg: () => raiseSVG('anim-raise') },
+  core: { label: 'Tensión de core', svg: () => coreSVG('anim-core') },
+  cardio: { label: 'Movimiento continuo', svg: () => cardioSVG('anim-cardio') },
+};
+function movementAnimation(type) {
+  const def = MOVEMENT_DEFS[type] || MOVEMENT_DEFS.push;
+  return `
+    <div class="movement-anim">
+      ${def.svg()}
+      <p class="muted" style="text-align:center;">${def.label} (animación esquemática)</p>
+    </div>
+  `;
+}
+
 const DIFFICULTY_LEVEL = { principiante: 2, intermedio: 3, avanzado: 4 };
 function levelBars(difficulty) {
   const level = DIFFICULTY_LEVEL[difficulty] || 3;
@@ -681,7 +745,10 @@ function viewExerciseDetail() {
           <p class="muted">${ex.machine} · ${MUSCLE_LABELS[ex.muscle_group]}</p>
           ${levelBars(ex.difficulty)}
         </div>
-        ${bodyDiagram(ex.muscle_group)}
+        <div class="exercise-visuals">
+          ${movementAnimation(ex.movement_type)}
+          ${bodyDiagram(ex.muscle_group)}
+        </div>
       </div>
       <a class="btn-secondary" href="https://www.youtube.com/results?search_query=${videoQuery}" target="_blank" rel="noopener">▶ Buscar demostración en vídeo</a>
 
