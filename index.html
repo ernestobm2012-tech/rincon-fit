@@ -60,7 +60,12 @@
     width: 100%; margin-top: 4px; padding: 10px 12px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: 1em;
   }
-  form input:focus, form select:focus { outline: 2px solid var(--accent); }
+  form input:focus, form select:focus, form textarea:focus { outline: 2px solid var(--accent); }
+  form textarea {
+    width: 100%; margin-top: 4px; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    font-size: 1em; font-family: inherit; resize: vertical;
+  }
   fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 14px; padding: 10px 12px; }
   fieldset legend { padding: 0 6px; color: var(--muted); font-size: 0.9em; }
   label.radio { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; color: var(--text); }
@@ -124,6 +129,30 @@
   .measure-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 16px; }
 
   .danger-zone { border-color: var(--bad); }
+
+  .exercise-link {
+    background: none; border: none; padding: 0; color: var(--text); font-weight: 700;
+    font-size: 1em; cursor: pointer; text-align: left; text-decoration: underline dotted;
+  }
+  .exercise-link:hover { color: var(--accent); }
+
+  .level-bars { display: inline-flex; gap: 3px; margin: 4px 0; vertical-align: middle; }
+  .level-bar { width: 14px; height: 5px; border-radius: 3px; background: var(--border); display: inline-block; }
+  .level-bar.filled { background: var(--accent); }
+
+  .exercise-detail-head { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; margin: 14px 0 18px; }
+  .muscle-diagram-wrap { flex-shrink: 0; width: 140px; }
+  .muscle-diagram { width: 100%; height: auto; }
+
+  .steps-list { padding-left: 20px; margin: 0 0 14px; }
+  .steps-list li { margin-bottom: 8px; }
+
+  .tip-box {
+    background: rgba(224,168,69,0.12); border: 1px solid var(--warn); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 16px;
+  }
+
+  .exercise-detail h3 { margin-top: 22px; }
 
   @media (max-width: 560px) {
     .app-header { gap: 10px; }

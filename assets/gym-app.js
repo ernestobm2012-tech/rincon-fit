@@ -14,6 +14,10 @@ const state = {
   exercises: [],
   tab: 'resumen',
   routineSeed: 0,
+  selectedExerciseId: null,
+  exerciseDetailLoading: false,
+  exerciseLogs: [],
+  exerciseNote: '',
 };
 
 const GOAL_LABELS = {
@@ -169,6 +173,59 @@ function generateRoutine(profile, exercises, seed) {
     });
     return { label: `Día ${i + 1} — ${groups.map((g) => MUSCLE_LABELS[g]).join(' + ')}`, exercises: dayExercises };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Diagrama corporal esquemático: resalta la zona muscular trabajada
+// ---------------------------------------------------------------------------
+const BODY_ZONES = {
+  head: { shape: 'circle', cx: 80, cy: 22, r: 16 },
+  shoulders: { shape: 'rect', x: 38, y: 42, w: 84, h: 14, rx: 7 },
+  chest: { shape: 'rect', x: 50, y: 58, w: 60, h: 38, rx: 8 },
+  armL: { shape: 'rect', x: 18, y: 58, w: 16, h: 86, rx: 8 },
+  armR: { shape: 'rect', x: 126, y: 58, w: 16, h: 86, rx: 8 },
+  core: { shape: 'rect', x: 54, y: 98, w: 52, h: 38, rx: 8 },
+  hips: { shape: 'rect', x: 50, y: 138, w: 60, h: 22, rx: 10 },
+  legL: { shape: 'rect', x: 50, y: 162, w: 22, h: 104, rx: 11 },
+  legR: { shape: 'rect', x: 88, y: 162, w: 22, h: 104, rx: 11 },
+};
+const BODY_ZONE_ORDER = ['legL', 'legR', 'hips', 'core', 'armL', 'armR', 'chest', 'shoulders', 'head'];
+const ACTIVE_ZONES_BY_GROUP = {
+  pecho: ['chest'],
+  espalda: ['chest', 'core'],
+  piernas: ['legL', 'legR'],
+  gluteos: ['hips'],
+  hombros: ['shoulders'],
+  brazos: ['armL', 'armR'],
+  core: ['core'],
+  cardio: ['chest', 'core'],
+};
+const BACK_VIEW_GROUPS = new Set(['espalda', 'gluteos']);
+
+function bodyDiagram(muscleGroup) {
+  const active = ACTIVE_ZONES_BY_GROUP[muscleGroup] || [];
+  const shapes = BODY_ZONE_ORDER.map((key) => {
+    const z = BODY_ZONES[key];
+    const fill = active.includes(key) ? '#e0645b' : '#3a4150';
+    return z.shape === 'circle'
+      ? `<circle cx="${z.cx}" cy="${z.cy}" r="${z.r}" fill="${fill}" />`
+      : `<rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="${z.rx}" fill="${fill}" />`;
+  }).join('');
+  const heart = muscleGroup === 'cardio' ? `<text x="80" y="86" font-size="24" text-anchor="middle">❤️</text>` : '';
+  const viewLabel = BACK_VIEW_GROUPS.has(muscleGroup) ? 'Vista trasera' : 'Vista frontal';
+  return `
+    <div class="muscle-diagram-wrap">
+      <svg viewBox="0 0 160 280" class="muscle-diagram" role="img" aria-label="Zona trabajada: ${MUSCLE_LABELS[muscleGroup]}">${shapes}${heart}</svg>
+      <p class="muted" style="text-align:center;">${viewLabel} — ${MUSCLE_LABELS[muscleGroup]}</p>
+    </div>
+  `;
+}
+
+const DIFFICULTY_LEVEL = { principiante: 2, intermedio: 3, avanzado: 4 };
+function levelBars(difficulty) {
+  const level = DIFFICULTY_LEVEL[difficulty] || 3;
+  const bars = Array.from({ length: 5 }, (_, i) => `<span class="level-bar ${i < level ? 'filled' : ''}"></span>`).join('');
+  return `<span class="level-bars" title="Nivel ${level}/5">${bars}</span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +452,7 @@ function renderApp() {
   else if (state.tab === 'dieta') main.innerHTML = viewDieta();
   else if (state.tab === 'medidas') main.innerHTML = viewMedidas();
   else if (state.tab === 'perfil') main.innerHTML = viewPerfil();
+  else if (state.tab === 'ejercicio') main.innerHTML = viewExerciseDetail();
 
   wireTabEvents();
 }
@@ -465,7 +523,8 @@ function viewRutina() {
               ${day.exercises.map((ex) => `
                 <tr>
                   <td>
-                    <strong>${ex.name}</strong>
+                    <button class="exercise-link" data-open-exercise="${ex.id}">${ex.name}</button>
+                    ${levelBars(ex.difficulty)}
                     <p class="muted">${ex.instructions}</p>
                   </td>
                   <td>${ex.machine}</td>
@@ -577,6 +636,105 @@ function viewMedidas() {
   `;
 }
 
+function viewExerciseDetail() {
+  const ex = state.exercises.find((e) => e.id === state.selectedExerciseId);
+  if (!ex) {
+    return `<section class="panel"><button class="btn-ghost" data-back-to-rutina>← Volver a la rutina</button><p>Ejercicio no encontrado.</p></section>`;
+  }
+  if (state.exerciseDetailLoading) {
+    return `
+      <section class="panel">
+        <button class="btn-ghost" data-back-to-rutina>← Volver a la rutina</button>
+        <p class="muted">Cargando…</p>
+      </section>
+    `;
+  }
+
+  const logs = state.exerciseLogs;
+  const maxWeight = logs.reduce((m, l) => (l.weight_kg != null ? Math.max(m, Number(l.weight_kg)) : m), 0);
+  const last30 = logs.filter((l) => (Date.now() - new Date(l.logged_at + 'T00:00:00')) / 86400000 <= 30);
+  const volume30 = last30.reduce((s, l) => s + (Number(l.weight_kg) || 0) * (Number(l.reps) || 0) * (Number(l.sets) || 1), 0);
+  const est1RM = logs.reduce((m, l) => {
+    if (l.weight_kg == null || l.reps == null) return m;
+    return Math.max(m, Number(l.weight_kg) * (1 + Number(l.reps) / 30));
+  }, 0);
+
+  const byDay = {};
+  logs.forEach((l) => {
+    if (l.weight_kg == null) return;
+    byDay[l.logged_at] = Math.max(byDay[l.logged_at] || 0, Number(l.weight_kg));
+  });
+  const chartPoints = Object.entries(byDay)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([d, w]) => ({ x: new Date(d + 'T00:00:00'), y: w }));
+
+  const videoQuery = encodeURIComponent(`${ex.name} ${ex.machine} técnica ejecución`);
+  const goal = state.profile ? state.profile.goal : 'definicion';
+  const defaultSets = GOAL_VOLUME[goal].sets;
+
+  return `
+    <section class="panel exercise-detail">
+      <button class="btn-ghost" data-back-to-rutina>← Volver a la rutina</button>
+      <div class="exercise-detail-head">
+        <div>
+          <h2>${ex.name}</h2>
+          <p class="muted">${ex.machine} · ${MUSCLE_LABELS[ex.muscle_group]}</p>
+          ${levelBars(ex.difficulty)}
+        </div>
+        ${bodyDiagram(ex.muscle_group)}
+      </div>
+      <a class="btn-secondary" href="https://www.youtube.com/results?search_query=${videoQuery}" target="_blank" rel="noopener">▶ Buscar demostración en vídeo</a>
+
+      <h3>Cómo hacerlo</h3>
+      <ol class="steps-list">
+        ${(ex.steps && ex.steps.length ? ex.steps : [ex.instructions]).map((s) => `<li>${s}</li>`).join('')}
+      </ol>
+
+      ${ex.tip ? `<div class="tip-box">💡 <strong>Consejo de experto:</strong> ${ex.tip}</div>` : ''}
+
+      <h3>Tu nota personal</h3>
+      <textarea id="exercise-note" rows="2" placeholder="Apunta aquí lo que te funcione (peso, sensaciones, ajustes de máquina...)">${state.exerciseNote || ''}</textarea>
+      <p class="field-ok" id="note-ok" hidden>Guardado.</p>
+
+      <h3>Tu progreso</h3>
+      <div class="card-grid">
+        <div class="stat-card"><span class="stat-label">Peso máximo</span><span class="stat-value">${maxWeight ? fmt1(maxWeight) + ' kg' : '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">Volumen (30 días)</span><span class="stat-value">${volume30 ? fmt0(volume30) + ' kg' : '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">1RM estimado</span><span class="stat-value">${est1RM ? fmt1(est1RM) + ' kg' : '—'}</span></div>
+      </div>
+      ${chartPoints.length >= 2 ? lineChart(chartPoints, { color: '#5b8def', unit: ' kg' }) : '<p class="chart-empty">Registra al menos 2 sesiones con peso para ver tu evolución.</p>'}
+
+      <h3>Registrar serie de hoy</h3>
+      <form id="log-form" class="measure-form">
+        <label>Fecha <input type="date" name="logged_at" value="${todayISO()}" max="${todayISO()}" required /></label>
+        <label>Peso (kg) <input type="number" name="weight_kg" step="0.5" min="0" max="500" /></label>
+        <label>Repeticiones <input type="number" name="reps" min="0" max="199" /></label>
+        <label>Series <input type="number" name="sets" min="1" max="49" value="${defaultSets}" /></label>
+        <p class="field-error" id="log-error" hidden></p>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+
+      ${logs.length ? `
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Fecha</th><th>Peso</th><th>Reps</th><th>Series</th><th></th></tr></thead>
+        <tbody>
+          ${logs.slice().reverse().slice(0, 10).map((l) => `
+            <tr>
+              <td>${new Date(l.logged_at + 'T00:00:00').toLocaleDateString('es-ES')}</td>
+              <td>${fmt1(l.weight_kg)}</td>
+              <td>${l.reps ?? '—'}</td>
+              <td>${l.sets}</td>
+              <td><button class="btn-ghost btn-sm" data-delete-log="${l.id}">Borrar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>` : ''}
+    </section>
+  `;
+}
+
 function viewPerfil() {
   const p = state.profile;
   return `
@@ -660,6 +818,68 @@ function wireTabEvents() {
     render();
   });
 
+  $$('[data-open-exercise]').forEach((btn) => btn.addEventListener('click', () => {
+    openExercise(btn.dataset.openExercise);
+  }));
+
+  const backBtn = $('[data-back-to-rutina]');
+  if (backBtn) backBtn.addEventListener('click', () => {
+    state.tab = 'rutina';
+    render();
+  });
+
+  const logForm = $('#log-form');
+  if (logForm) {
+    logForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const errorEl = $('#log-error');
+      errorEl.hidden = true;
+      const payload = {
+        user_id: state.session.user.id,
+        exercise_id: state.selectedExerciseId,
+        logged_at: fd.get('logged_at'),
+        weight_kg: fd.get('weight_kg') ? Number(fd.get('weight_kg')) : null,
+        reps: fd.get('reps') ? Number(fd.get('reps')) : null,
+        sets: fd.get('sets') ? Number(fd.get('sets')) : 1,
+      };
+      try {
+        const { error } = await supabase.from('gym_exercise_logs').insert(payload);
+        if (error) throw error;
+        await reloadExerciseLogs();
+        render();
+      } catch (err) {
+        errorEl.hidden = false;
+        errorEl.textContent = err.message;
+      }
+    });
+  }
+
+  $$('[data-delete-log]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm('¿Borrar este registro?')) return;
+    await supabase.from('gym_exercise_logs').delete().eq('id', btn.dataset.deleteLog);
+    await reloadExerciseLogs();
+    render();
+  }));
+
+  const noteEl = $('#exercise-note');
+  if (noteEl) {
+    noteEl.addEventListener('blur', async () => {
+      const note = noteEl.value;
+      if (note === state.exerciseNote) return;
+      state.exerciseNote = note;
+      await supabase.from('gym_exercise_notes').upsert(
+        { user_id: state.session.user.id, exercise_id: state.selectedExerciseId, note, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,exercise_id' }
+      );
+      const okEl = $('#note-ok');
+      if (okEl) {
+        okEl.hidden = false;
+        setTimeout(() => { okEl.hidden = true; }, 2000);
+      }
+    });
+  }
+
   const profileForm = $('#profile-form');
   if (profileForm) {
     profileForm.addEventListener('submit', async (e) => {
@@ -717,6 +937,34 @@ async function loadUserData() {
   state.profile = profile || null;
   state.measurements = measurements || [];
   state.exercises = exercises || [];
+}
+
+async function reloadExerciseLogs() {
+  const userId = state.session.user.id;
+  const { data } = await supabase
+    .from('gym_exercise_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('exercise_id', state.selectedExerciseId)
+    .order('logged_at', { ascending: true });
+  state.exerciseLogs = data || [];
+}
+
+async function openExercise(exerciseId) {
+  state.selectedExerciseId = exerciseId;
+  state.tab = 'ejercicio';
+  state.exerciseDetailLoading = true;
+  render();
+
+  const userId = state.session.user.id;
+  const [{ data: logs }, { data: noteRow }] = await Promise.all([
+    supabase.from('gym_exercise_logs').select('*').eq('user_id', userId).eq('exercise_id', exerciseId).order('logged_at', { ascending: true }),
+    supabase.from('gym_exercise_notes').select('*').eq('user_id', userId).eq('exercise_id', exerciseId).maybeSingle(),
+  ]);
+  state.exerciseLogs = logs || [];
+  state.exerciseNote = noteRow ? noteRow.note : '';
+  state.exerciseDetailLoading = false;
+  render();
 }
 
 async function init() {
