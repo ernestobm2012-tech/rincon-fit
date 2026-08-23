@@ -145,25 +145,33 @@
   .muscle-diagram-wrap, .movement-anim { flex-shrink: 0; width: 140px; }
   .muscle-diagram, .movement-svg { width: 100%; height: auto; }
 
-  @keyframes animPush { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  @keyframes animPull { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-22px); } }
+  @keyframes animPush { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(14px); } }
+  @keyframes animPull { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-14px); } }
   @keyframes animSquat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
   @keyframes animRaise { 0%, 100% { transform: rotate(70deg); } 50% { transform: rotate(0deg); } }
   @keyframes animCore { 0%, 100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.06); opacity: 1; } }
-  @keyframes animCardio { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes animLegA { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(16deg); } }
+  @keyframes animLegB { 0%, 100% { transform: rotate(16deg); } 50% { transform: rotate(-16deg); } }
 
-  .anim-push { animation: animPush 1.6s ease-in-out infinite; }
-  .anim-pull { animation: animPull 1.6s ease-in-out infinite; }
+  .anim-push { animation: animPush 1.4s ease-in-out infinite; }
+  .anim-pull { animation: animPull 1.4s ease-in-out infinite; }
   .anim-squat { animation: animSquat 2s ease-in-out infinite; }
   .anim-raise {
     animation: animRaise 1.8s ease-in-out infinite;
     transform-box: fill-box; transform-origin: 50% 0%;
   }
   .anim-core { animation: animCore 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
-  .anim-cardio { animation: animCardio 2.4s linear infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+  .anim-cardio-a {
+    animation: animLegA 1.1s ease-in-out infinite;
+    transform-box: fill-box; transform-origin: 100% 0%;
+  }
+  .anim-cardio-b {
+    animation: animLegB 1.1s ease-in-out infinite;
+    transform-box: fill-box; transform-origin: 0% 0%;
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .anim-push, .anim-pull, .anim-squat, .anim-raise, .anim-core, .anim-cardio { animation: none; }
+    .anim-push, .anim-pull, .anim-squat, .anim-raise, .anim-core, .anim-cardio-a, .anim-cardio-b { animation: none; }
   }
 
   .steps-list { padding-left: 20px; margin: 0 0 14px; }
