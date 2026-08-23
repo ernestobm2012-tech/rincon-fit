@@ -131,6 +131,90 @@ function dietTargets(profile, latestWeight) {
 }
 
 // ---------------------------------------------------------------------------
+// Alimentos concretos por comida: a partir de las calorías/macros de cada
+// comida (mismo % que su reparto calórico), calcula gramos de una fuente de
+// proteína, una de carbohidrato y (si hace falta) una de grasa, restando la
+// grasa que ya aportan las otras dos. Valores nutricionales por 100 g.
+// ---------------------------------------------------------------------------
+const FOODS = {
+  huevo: { name: 'Huevo entero cocido', kcal: 155, p: 13, c: 1.1, f: 11 },
+  pollo: { name: 'Pechuga de pollo a la plancha', kcal: 165, p: 31, c: 0, f: 3.6 },
+  yogurGriego: { name: 'Yogur griego 0%', kcal: 59, p: 10, c: 3.6, f: 0.4 },
+  salmon: { name: 'Salmón a la plancha', kcal: 208, p: 20, c: 0, f: 13 },
+  avena: { name: 'Avena en copos', kcal: 389, p: 17, c: 66, f: 7 },
+  arroz: { name: 'Arroz blanco cocido', kcal: 130, p: 2.7, c: 28, f: 0.3 },
+  manzana: { name: 'Manzana', kcal: 52, p: 0.3, c: 14, f: 0.2 },
+  patata: { name: 'Patata cocida', kcal: 87, p: 2, c: 20, f: 0.1 },
+  almendras: { name: 'Almendras', kcal: 579, p: 21, c: 22, f: 50 },
+  aceite: { name: 'Aceite de oliva virgen extra', kcal: 884, p: 0, c: 0, f: 100 },
+};
+
+const MEAL_TEMPLATES = [
+  { label: 'Desayuno', pct: 0.25, protein: 'huevo', carb: 'avena', fat: 'almendras', extra: null },
+  { label: 'Comida', pct: 0.35, protein: 'pollo', carb: 'arroz', fat: 'aceite', extra: 'Verdura o ensalada, la cantidad que quieras' },
+  { label: 'Merienda', pct: 0.15, protein: 'yogurGriego', carb: 'manzana', fat: null, extra: null },
+  { label: 'Cena', pct: 0.25, protein: 'salmon', carb: 'patata', fat: null, extra: 'Verdura o ensalada, la cantidad que quieras' },
+];
+
+function roundGrams(g) {
+  return Math.max(5, Math.round(g / 5) * 5);
+}
+
+function mealFoodPlan(targets, template) {
+  const mealProteinG = targets.proteinG * template.pct;
+  const mealCarbsG = targets.carbsG * template.pct;
+  const mealFatG = targets.fatG * template.pct;
+
+  const proteinFood = template.protein ? FOODS[template.protein] : null;
+  const carbFood = template.carb ? FOODS[template.carb] : null;
+
+  // La comida de "carbohidrato" también aporta algo de proteína (p. ej. la
+  // avena tiene bastante), así que resolvemos las dos incógnitas a la vez
+  // en vez de calcular cada una por separado y contar esa proteína dos veces.
+  let proteinGrams = 0;
+  let carbGrams = 0;
+  if (proteinFood && carbFood) {
+    const a = proteinFood.p / 100, b = carbFood.p / 100;
+    const c = proteinFood.c / 100, d = carbFood.c / 100;
+    const det = a * d - b * c;
+    if (Math.abs(det) > 1e-6) {
+      proteinGrams = (mealProteinG * d - mealCarbsG * b) / det;
+      carbGrams = (mealCarbsG * a - mealProteinG * c) / det;
+    } else {
+      proteinGrams = mealProteinG / a;
+    }
+  } else if (proteinFood) {
+    proteinGrams = mealProteinG / (proteinFood.p / 100);
+  } else if (carbFood) {
+    carbGrams = mealCarbsG / (carbFood.c / 100);
+  }
+  proteinGrams = Math.max(proteinGrams, 0);
+  carbGrams = Math.max(carbGrams, 0);
+
+  const items = [];
+  let fatCovered = 0;
+  if (proteinFood) {
+    const grams = roundGrams(proteinGrams);
+    fatCovered += (grams / 100) * proteinFood.f;
+    items.push({ name: proteinFood.name, grams, kcal: Math.round((grams / 100) * proteinFood.kcal) });
+  }
+  if (carbFood) {
+    const grams = roundGrams(carbGrams);
+    fatCovered += (grams / 100) * carbFood.f;
+    items.push({ name: carbFood.name, grams, kcal: Math.round((grams / 100) * carbFood.kcal) });
+  }
+  if (template.fat) {
+    const food = FOODS[template.fat];
+    const remainingFat = Math.max(mealFatG - fatCovered, 0);
+    if (remainingFat > 1) {
+      const grams = roundGrams(remainingFat / (food.f / 100));
+      items.push({ name: food.name, grams, kcal: Math.round((grams / 100) * food.kcal) });
+    }
+  }
+  return items;
+}
+
+// ---------------------------------------------------------------------------
 // Generador de rutina: reparte ejercicios del catálogo en un split semanal
 // según los días/semana y el objetivo del perfil.
 // ---------------------------------------------------------------------------
@@ -657,12 +741,6 @@ function viewDieta() {
   if (!targets) {
     return `<section class="panel"><p>Registra tu peso en la pestaña <strong>Medidas</strong> para calcular tu dieta.</p></section>`;
   }
-  const distribution = [
-    { label: 'Desayuno', pct: 0.25 },
-    { label: 'Comida', pct: 0.35 },
-    { label: 'Merienda', pct: 0.15 },
-    { label: 'Cena', pct: 0.25 },
-  ];
   const goalNote = {
     perdida_peso: 'Déficit moderado (~500 kcal/día) para perder grasa sin perder demasiado músculo. Prioriza proteína y verdura en cada comida.',
     definicion: 'Déficit ligero (~250 kcal/día) manteniendo proteína alta para conservar la masa muscular mientras bajas grasa corporal.',
@@ -680,14 +758,25 @@ function viewDieta() {
         <div class="stat-card"><span class="stat-label">Carbohidratos</span><span class="stat-value">${fmt0(targets.carbsG)} g</span></div>
       </div>
       <p>${goalNote}</p>
-      <h3>Reparto sugerido a lo largo del día</h3>
-      <table class="routine-table">
-        <thead><tr><th>Comida</th><th>% calorías</th><th>Aprox. kcal</th></tr></thead>
-        <tbody>
-          ${distribution.map((d) => `<tr><td>${d.label}</td><td>${Math.round(d.pct * 100)}%</td><td>${fmt0(targets.calories * d.pct)} kcal</td></tr>`).join('')}
-        </tbody>
-      </table>
-      <p class="muted">Ideas de alimentos: proteína (pollo, pavo, pescado, huevos, legumbres, lácteos altos en proteína), carbohidratos (arroz, patata, avena, fruta, pan integral) y grasas (aceite de oliva, frutos secos, aguacate). Este cálculo es orientativo y no sustituye a un/a nutricionista si tienes alguna condición médica.</p>
+      <h3>Qué comer en cada comida</h3>
+      <p class="muted">Cantidades en crudo/cocido según el alimento, calculadas para cubrir tus macros de hoy. Puedes cambiar un alimento por otro de la misma categoría (p. ej. pollo por pavo, arroz por pasta) manteniendo un peso parecido.</p>
+      ${MEAL_TEMPLATES.map((template) => {
+        const items = mealFoodPlan(targets, template);
+        const mealKcal = Math.round(targets.calories * template.pct);
+        return `
+          <div class="routine-day">
+            <h4>${template.label} <span class="muted">— ${Math.round(template.pct * 100)}% · ~${mealKcal} kcal</span></h4>
+            <table class="routine-table">
+              <thead><tr><th>Alimento</th><th>Cantidad</th><th>Aprox. kcal</th></tr></thead>
+              <tbody>
+                ${items.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td><td>${it.kcal} kcal</td></tr>`).join('')}
+                ${template.extra ? `<tr><td colspan="3" class="muted">${template.extra}</td></tr>` : ''}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }).join('')}
+      <p class="muted">Este cálculo es orientativo (usa valores nutricionales medios) y no sustituye a un/a nutricionista si tienes alguna condición médica. Puedes sustituir cualquier alimento por otro de su misma categoría (proteína/carbohidrato/grasa) con un peso similar.</p>
     </section>
   `;
 }
