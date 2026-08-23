@@ -52,9 +52,20 @@ usuario ni de las tablas de los otros dos proyectos, y viceversa.
   usuario y fecha, una fila por día.
 - `gym_exercises` — catálogo de ejercicios/máquinas (lectura pública,
   gestionado solo desde el dashboard/SQL, no editable desde el navegador).
+- `gym_exercise_logs` / `gym_exercise_notes` — progreso (peso/reps/series)
+  y nota personal por usuario y ejercicio.
 
 Para añadir o editar ejercicios del catálogo: dashboard de Supabase → SQL
 Editor, `insert`/`update` sobre `gym_exercises`.
+
+## Fotos de los ejercicios
+
+Las dos fotos por ejercicio en `assets/exercise-photos/` vienen de
+[Free Exercise DB](https://github.com/yuhonas/free-exercise-db), un banco de
+imágenes de gimnasio de dominio público (licencia
+[Unlicense](https://unlicense.org/), sin restricciones ni atribución
+obligatoria). El campo `photo_ref` de `gym_exercises` guarda el nombre de la
+carpeta correspondiente en ese dataset.
 
 Habilita **Authentication → Providers → Email** en el dashboard de Supabase
 si no está ya activo, para que el registro con email/contraseña funcione.
