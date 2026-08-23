@@ -319,6 +319,19 @@ function movementAnimation(type) {
   `;
 }
 
+// Dos fotogramas reales (inicio/fin del movimiento) en bucle, de un banco de
+// imágenes de dominio público (Free Exercise DB, licencia Unlicense).
+function exercisePhotoLoop(photoRef, name) {
+  if (!photoRef) return null;
+  const base = `./assets/exercise-photos/${photoRef}/`;
+  return `
+    <div class="photo-loop">
+      <img src="${base}0.jpg" alt="${name} — fotograma 1" class="photo-frame photo-frame-a" loading="lazy" />
+      <img src="${base}1.jpg" alt="${name} — fotograma 2" class="photo-frame photo-frame-b" loading="lazy" />
+    </div>
+  `;
+}
+
 const DIFFICULTY_LEVEL = { principiante: 2, intermedio: 3, avanzado: 4 };
 function levelBars(difficulty) {
   const level = DIFFICULTY_LEVEL[difficulty] || 3;
@@ -780,10 +793,11 @@ function viewExerciseDetail() {
           ${levelBars(ex.difficulty)}
         </div>
         <div class="exercise-visuals">
-          ${movementAnimation(ex.movement_type)}
+          ${exercisePhotoLoop(ex.photo_ref, ex.name) || movementAnimation(ex.movement_type)}
           ${bodyDiagram(ex.muscle_group)}
         </div>
       </div>
+      ${ex.photo_ref ? '<p class="muted photo-credit">Fotos: banco de imágenes de dominio público (Free Exercise DB).</p>' : ''}
       <a class="btn-secondary" href="https://www.youtube.com/results?search_query=${videoQuery}" target="_blank" rel="noopener">▶ Buscar demostración en vídeo</a>
 
       <h3>Cómo hacerlo</h3>
