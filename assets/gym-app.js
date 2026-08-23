@@ -236,17 +236,28 @@ const FIGURE_LEGS_STANDING = `
   <line x1="86" y1="60" x2="92" y2="86" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
 `;
 
-function armMoveSVG(cls) {
-  // Figura de pie con un brazo (antebrazo + puño) que se extiende hacia
-  // fuera (empuje) o se recoge hacia el pecho (tirón), según la animación.
+function pushSVG() {
+  // Brazo por encima de la cabeza empujando un peso hacia arriba (press).
   return `<svg viewBox="0 0 160 90" class="movement-svg">
     <line x1="20" y1="86" x2="140" y2="86" stroke="#2a303a" stroke-width="3" />
     ${FIGURE_LEGS_STANDING}
     ${FIGURE_HEAD_TORSO}
-    <line x1="92" y1="38" x2="106" y2="46" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
-    <g class="${cls}">
-      <line x1="106" y1="46" x2="126" y2="46" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
-      <circle cx="128" cy="46" r="6" fill="#5b8def" />
+    <g class="anim-push">
+      <line x1="90" y1="32" x2="100" y2="14" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+      <rect x="90" y="4" width="20" height="8" rx="2" fill="#5b8def" />
+    </g>
+  </svg>`;
+}
+function pullSVG() {
+  // Brazo flexionado tirando de un cable (línea discontinua) hacia el pecho.
+  return `<svg viewBox="0 0 160 90" class="movement-svg">
+    <line x1="20" y1="86" x2="140" y2="86" stroke="#2a303a" stroke-width="3" />
+    ${FIGURE_LEGS_STANDING}
+    ${FIGURE_HEAD_TORSO}
+    <line x1="16" y1="46" x2="66" y2="46" stroke="#2a303a" stroke-width="3" stroke-dasharray="5 4" />
+    <g class="anim-pull">
+      <line x1="66" y1="40" x2="48" y2="46" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+      <circle cx="44" cy="46" r="6" fill="#5b8def" />
     </g>
   </svg>`;
 }
@@ -291,8 +302,8 @@ function cardioSVG() {
   </svg>`;
 }
 const MOVEMENT_DEFS = {
-  push: { label: 'Empuje', svg: () => armMoveSVG('anim-push') },
-  pull: { label: 'Tirón', svg: () => armMoveSVG('anim-pull') },
+  push: { label: 'Empuje', svg: () => pushSVG() },
+  pull: { label: 'Tirón', svg: () => pullSVG() },
   squat: { label: 'Flexión de piernas / cadera', svg: () => squatSVG('anim-squat') },
   raise: { label: 'Elevación', svg: () => raiseSVG('anim-raise') },
   core: { label: 'Tensión de core', svg: () => coreSVG('anim-core') },
