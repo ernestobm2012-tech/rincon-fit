@@ -223,14 +223,30 @@ function bodyDiagram(muscleGroup) {
 
 // ---------------------------------------------------------------------------
 // Animación esquemática del patrón de movimiento (SVG + CSS, en bucle)
+// Todas parten de una misma figura humana esquemática (cabeza + torso +
+// piernas) para que se lea como "una persona haciendo el movimiento" y no
+// como un icono suelto de pesas.
 // ---------------------------------------------------------------------------
-function barbellSVG(cls) {
+const FIGURE_HEAD_TORSO = `
+  <circle cx="80" cy="16" r="10" fill="#5b8def" />
+  <rect x="68" y="28" width="24" height="34" rx="8" fill="#9aa4b2" />
+`;
+const FIGURE_LEGS_STANDING = `
+  <line x1="74" y1="60" x2="68" y2="86" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+  <line x1="86" y1="60" x2="92" y2="86" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+`;
+
+function armMoveSVG(cls) {
+  // Figura de pie con un brazo (antebrazo + puño) que se extiende hacia
+  // fuera (empuje) o se recoge hacia el pecho (tirón), según la animación.
   return `<svg viewBox="0 0 160 90" class="movement-svg">
-    <line x1="20" y1="72" x2="140" y2="72" stroke="#2a303a" stroke-width="3" />
+    <line x1="20" y1="86" x2="140" y2="86" stroke="#2a303a" stroke-width="3" />
+    ${FIGURE_LEGS_STANDING}
+    ${FIGURE_HEAD_TORSO}
+    <line x1="92" y1="38" x2="106" y2="46" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
     <g class="${cls}">
-      <rect x="18" y="36" width="10" height="26" rx="2" fill="#5b8def" />
-      <rect x="132" y="36" width="10" height="26" rx="2" fill="#5b8def" />
-      <line x1="28" y1="49" x2="132" y2="49" stroke="#9aa4b2" stroke-width="4" />
+      <line x1="106" y1="46" x2="126" y2="46" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+      <circle cx="128" cy="46" r="6" fill="#5b8def" />
     </g>
   </svg>`;
 }
@@ -238,42 +254,49 @@ function squatSVG(cls) {
   return `<svg viewBox="0 0 160 90" class="movement-svg">
     <line x1="20" y1="82" x2="140" y2="82" stroke="#2a303a" stroke-width="3" />
     <g class="${cls}">
-      <circle cx="80" cy="18" r="10" fill="#5b8def" />
-      <rect x="68" y="30" width="24" height="26" rx="6" fill="#9aa4b2" />
-      <line x1="72" y1="56" x2="65" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
-      <line x1="88" y1="56" x2="95" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
+      ${FIGURE_HEAD_TORSO}
+      <line x1="72" y1="58" x2="65" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
+      <line x1="88" y1="58" x2="95" y2="80" stroke="#9aa4b2" stroke-width="5" stroke-linecap="round" />
     </g>
   </svg>`;
 }
 function raiseSVG(cls) {
   return `<svg viewBox="0 0 160 90" class="movement-svg">
-    <circle cx="80" cy="18" r="10" fill="#5b8def" />
-    <rect x="68" y="30" width="24" height="40" rx="8" fill="#3a4150" />
-    <line x1="80" y1="38" x2="80" y2="76" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" class="${cls}" />
+    <line x1="20" y1="86" x2="140" y2="86" stroke="#2a303a" stroke-width="3" />
+    ${FIGURE_LEGS_STANDING}
+    ${FIGURE_HEAD_TORSO}
+    <g class="${cls}">
+      <line x1="80" y1="38" x2="80" y2="70" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" />
+      <circle cx="80" cy="72" r="6" fill="#5b8def" />
+    </g>
   </svg>`;
 }
 function coreSVG(cls) {
   return `<svg viewBox="0 0 160 90" class="movement-svg">
     <line x1="20" y1="70" x2="140" y2="70" stroke="#2a303a" stroke-width="3" />
     <g class="${cls}">
-      <rect x="35" y="46" width="90" height="16" rx="8" fill="#5b8def" />
-      <circle cx="30" cy="54" r="9" fill="#9aa4b2" />
+      <rect x="35" y="46" width="90" height="16" rx="8" fill="#9aa4b2" />
+      <circle cx="30" cy="54" r="9" fill="#5b8def" />
     </g>
   </svg>`;
 }
-function cardioSVG(cls) {
+function cardioSVG() {
+  // Piernas alternas (tijera), como al correr o pedalear.
   return `<svg viewBox="0 0 160 90" class="movement-svg">
-    <circle cx="80" cy="45" r="26" fill="none" stroke="#5b8def" stroke-width="6"
-      stroke-linecap="round" stroke-dasharray="120 40" class="${cls}" />
+    <line x1="20" y1="86" x2="140" y2="86" stroke="#2a303a" stroke-width="3" />
+    ${FIGURE_HEAD_TORSO}
+    <line x1="80" y1="60" x2="80" y2="62" stroke="#9aa4b2" stroke-width="1" />
+    <line x1="80" y1="60" x2="60" y2="84" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" class="anim-cardio-a" />
+    <line x1="80" y1="60" x2="100" y2="84" stroke="#9aa4b2" stroke-width="6" stroke-linecap="round" class="anim-cardio-b" />
   </svg>`;
 }
 const MOVEMENT_DEFS = {
-  push: { label: 'Empuje', svg: () => barbellSVG('anim-push') },
-  pull: { label: 'Tirón', svg: () => barbellSVG('anim-pull') },
+  push: { label: 'Empuje', svg: () => armMoveSVG('anim-push') },
+  pull: { label: 'Tirón', svg: () => armMoveSVG('anim-pull') },
   squat: { label: 'Flexión de piernas / cadera', svg: () => squatSVG('anim-squat') },
   raise: { label: 'Elevación', svg: () => raiseSVG('anim-raise') },
   core: { label: 'Tensión de core', svg: () => coreSVG('anim-core') },
-  cardio: { label: 'Movimiento continuo', svg: () => cardioSVG('anim-cardio') },
+  cardio: { label: 'Movimiento continuo', svg: () => cardioSVG() },
 };
 function movementAnimation(type) {
   const def = MOVEMENT_DEFS[type] || MOVEMENT_DEFS.push;
