@@ -20,17 +20,24 @@ Vercel...).
 - **Cuestionario inicial**: sexo, fecha de nacimiento, altura, peso, nivel
   de actividad, objetivo (pérdida de peso / definición / aumento de masa) y
   días de entrenamiento por semana.
-- **Rutina generada** a partir de un catálogo de ejercicios con su máquina/
-  equipo, grupo muscular e instrucciones, repartida en un split semanal
-  según los días disponibles, con series/repeticiones/descanso ajustados al
-  objetivo. Se puede regenerar para tener variedad.
+- **Rutina generada** a partir de un catálogo de 58 ejercicios (máquinas,
+  barra, peso corporal y bastantes con mancuernas) con su máquina/equipo,
+  grupo muscular e instrucciones, repartida en un split semanal según los
+  días disponibles, con series/repeticiones/descanso ajustados al objetivo.
+  Se renueva sola cada semana natural evitando repetir los ejercicios de la
+  semana anterior en la medida que el catálogo lo permite, y también se
+  puede regenerar a mano para tener variedad al momento.
 - **Dieta orientativa**: calorías y macros calculados con la fórmula de
   Mifflin-St Jeor (específica por sexo), ajustados al objetivo (déficit,
   déficit ligero o superávit), con reparto sugerido por comidas.
-- **Evolución guardada**: cada medición (peso, cintura, pecho, brazo,
-  pierna) queda registrada con fecha, con gráficos de evolución de peso,
-  cintura e IMC, y categorías (IMC, riesgo por perímetro de cintura) que
-  usan los umbrales específicos por sexo.
+- **Evolución guardada**: cada medición (peso, cintura, tripa por encima
+  del ombligo, pecho, brazo, pierna) queda registrada con fecha, con
+  gráficos de evolución de peso, cintura, tripa e IMC, y categorías (IMC,
+  riesgo por perímetro de cintura) que usan los umbrales específicos por
+  sexo.
+- **Progreso por ejercicio** adaptado al tipo: peso/reps/series y 1RM
+  estimado para ejercicios de fuerza, velocidad y tiempo para los de
+  cardio (cinta, bici, elíptica...).
 - Todo el contenido es privado por usuario mediante Row Level Security: solo
   tú puedes ver y editar tus propios datos.
 
@@ -52,8 +59,9 @@ usuario ni de las tablas de los otros dos proyectos, y viceversa.
   usuario y fecha, una fila por día.
 - `gym_exercises` — catálogo de ejercicios/máquinas (lectura pública,
   gestionado solo desde el dashboard/SQL, no editable desde el navegador).
-- `gym_exercise_logs` / `gym_exercise_notes` — progreso (peso/reps/series)
-  y nota personal por usuario y ejercicio.
+- `gym_exercise_logs` / `gym_exercise_notes` — progreso (peso/reps/series
+  para fuerza, velocidad/duración para cardio) y nota personal por usuario
+  y ejercicio.
 
 Para añadir o editar ejercicios del catálogo: dashboard de Supabase → SQL
 Editor, `insert`/`update` sobre `gym_exercises`.
