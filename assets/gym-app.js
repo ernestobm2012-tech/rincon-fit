@@ -14,6 +14,7 @@ const state = {
   exercises: [],
   tab: 'resumen',
   routineSeed: 0,
+  routineOverrides: {},
   selectedExerciseId: null,
   exerciseDetailLoading: false,
   exerciseLogs: [],
@@ -239,12 +240,14 @@ function mealFoodPlan(targets, template) {
 // Generador de rutina: reparte ejercicios del catálogo en un split semanal
 // según los días/semana y el objetivo del perfil.
 // ---------------------------------------------------------------------------
+// Cada día combina al menos 2 grupos musculares (nunca uno solo), para que
+// siempre haya catálogo suficiente con el que llegar a 6-8 ejercicios/día.
 const SPLITS = {
-  2: [['pecho', 'espalda', 'piernas', 'core'], ['hombros', 'brazos', 'piernas', 'gluteos', 'cardio']],
+  2: [['pecho', 'espalda', 'piernas', 'core'], ['hombros', 'brazos', 'gluteos', 'cardio']],
   3: [['pecho', 'hombros', 'brazos'], ['espalda', 'core'], ['piernas', 'gluteos', 'cardio']],
   4: [['pecho', 'brazos'], ['espalda', 'core'], ['piernas', 'gluteos'], ['hombros', 'cardio']],
-  5: [['pecho'], ['espalda'], ['piernas', 'gluteos'], ['hombros'], ['brazos', 'core', 'cardio']],
-  6: [['pecho', 'brazos'], ['espalda', 'core'], ['piernas'], ['hombros', 'brazos'], ['piernas', 'gluteos'], ['cardio', 'core']],
+  5: [['pecho', 'core'], ['espalda', 'cardio'], ['piernas', 'gluteos'], ['hombros', 'core'], ['brazos', 'cardio']],
+  6: [['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'gluteos'], ['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'cardio']],
 };
 
 const GOAL_VOLUME = {
@@ -270,26 +273,68 @@ function isSafeForInjuries(exercise, injuries) {
   return !caution.some((zone) => injuries.includes(zone));
 }
 
+// Cuántos ejercicios queremos por sesión. El objetivo (perdida_peso/
+// definicion/volumen) no filtra qué ejercicios entran —eso lo decide el
+// grupo muscular y, si aplica, la lesión— sino las series/reps/descanso
+// (ver GOAL_VOLUME), que es donde de verdad cambia un plan según el
+// objetivo.
+const DAY_EXERCISE_TARGET = 8;
+
+function exercisePoolForGroup(exercises, group, injuries) {
+  let pool = exercises.filter((e) => e.muscle_group === group && isSafeForInjuries(e, injuries));
+  if (pool.length === 0) {
+    // Sin alternativa segura para esta lesión: mejor mostrar la opción
+    // normal (avisada en el detalle) que dejar el hueco vacío.
+    pool = exercises.filter((e) => e.muscle_group === group);
+  }
+  return pool;
+}
+
 function generateRoutine(profile, exercises, seed) {
   const days = SPLITS[profile.days_per_week] || SPLITS[3];
-  const perGroupCount = 2;
   const injuries = profile.injuries || [];
+
   return days.map((groups, i) => {
-    const dayExercises = [];
-    groups.forEach((group) => {
-      let pool = exercises.filter(
-        (e) => e.muscle_group === group && e.goals.includes(profile.goal) && isSafeForInjuries(e, injuries)
-      );
-      if (pool.length === 0) {
-        // Sin alternativa segura para esta lesión: mejor mostrar la opción
-        // normal (avisada en el detalle) que dejar el hueco vacío.
-        pool = exercises.filter((e) => e.muscle_group === group && e.goals.includes(profile.goal));
+    const groupPools = groups.map((group) => seededShuffle(exercisePoolForGroup(exercises, group, injuries), seed + i + group.length));
+    const basePerGroup = Math.max(2, Math.floor(DAY_EXERCISE_TARGET / groups.length));
+    const picked = groupPools.map((pool) => pool.slice(0, basePerGroup));
+    let total = picked.reduce((sum, arr) => sum + arr.length, 0);
+
+    // Si algún grupo tiene poco catálogo (p. ej. glúteos), reparte los
+    // huecos que deja entre los demás grupos del día para acercarse a
+    // DAY_EXERCISE_TARGET siempre que el catálogo lo permita.
+    let addedMore = true;
+    while (total < DAY_EXERCISE_TARGET && addedMore) {
+      addedMore = false;
+      for (let gi = 0; gi < groupPools.length && total < DAY_EXERCISE_TARGET; gi++) {
+        const nextIndex = picked[gi].length;
+        if (nextIndex < groupPools[gi].length) {
+          picked[gi].push(groupPools[gi][nextIndex]);
+          total++;
+          addedMore = true;
+        }
       }
-      const picked = seededShuffle(pool, seed + i + group.length).slice(0, perGroupCount);
-      dayExercises.push(...picked);
-    });
-    return { label: `Día ${i + 1} — ${groups.map((g) => MUSCLE_LABELS[g]).join(' + ')}`, exercises: dayExercises };
+    }
+
+    return { label: `Día ${i + 1} — ${groups.map((g) => MUSCLE_LABELS[g]).join(' + ')}`, exercises: picked.flat() };
   });
+}
+
+// Sustituye, dentro de la rutina ya generada, los ejercicios que el
+// usuario haya cambiado a mano (p. ej. porque no tiene esa máquina) por
+// su alternativa elegida. La clave es "díaÍndice-puestoÍndice" para que
+// el cambio se mantenga aunque se vuelva a renderizar, pero se olvide al
+// generar una variante nueva o cambiar el perfil.
+function applyRoutineOverrides(routine) {
+  return routine.map((day, dayIndex) => ({
+    ...day,
+    exercises: day.exercises.map((ex, slotIndex) => {
+      const overrideId = state.routineOverrides[`${dayIndex}-${slotIndex}`];
+      if (!overrideId) return ex;
+      const replacement = state.exercises.find((e) => e.id === overrideId);
+      return replacement || ex;
+    }),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -735,7 +780,7 @@ function viewResumen() {
 
 function viewRutina() {
   const p = state.profile;
-  const routine = generateRoutine(p, state.exercises, state.routineSeed);
+  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, state.routineSeed));
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
   return `
@@ -745,15 +790,17 @@ function viewRutina() {
         <button class="btn-secondary" id="regen-routine">Generar otra variante</button>
       </div>
       <p>Pauta general: <strong>${vol.sets} series</strong> de <strong>${vol.reps} repeticiones</strong>, descanso de <strong>${vol.rest}</strong> entre series. Ajusta el peso para que las últimas 2 repeticiones cuesten de verdad sin perder la técnica.</p>
+      <p class="muted">¿No tienes alguna de estas máquinas en tu gimnasio? Pulsa "Cambiar" para sustituirla por otra del mismo grupo muscular.</p>
       ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
-      ${routine.map((day) => `
+      ${routine.map((day, dayIndex) => `
         <div class="routine-day">
           <h3>${day.label}</h3>
           ${day.exercises.length === 0 ? '<p class="chart-empty">No hay ejercicios suficientes en el catálogo para este grupo.</p>' : `
+          ${day.exercises.length < 6 && injuries.length > 0 ? '<p class="muted">Hoy salen menos ejercicios de lo habitual: hay pocas alternativas seguras para tu lesión en este grupo muscular.</p>' : ''}
           <table class="routine-table">
-            <thead><tr><th>Ejercicio</th><th>Máquina / equipo</th><th>Series x reps</th></tr></thead>
+            <thead><tr><th>Ejercicio</th><th>Máquina / equipo</th><th>Series x reps</th><th></th></tr></thead>
             <tbody>
-              ${day.exercises.map((ex) => `
+              ${day.exercises.map((ex, slotIndex) => `
                 <tr>
                   <td>
                     <button class="exercise-link" data-open-exercise="${ex.id}">${ex.name}</button>
@@ -763,6 +810,7 @@ function viewRutina() {
                   </td>
                   <td>${ex.machine}</td>
                   <td>${vol.sets} x ${vol.reps}</td>
+                  <td><button class="btn-ghost btn-sm" data-swap-day="${dayIndex}" data-swap-slot="${slotIndex}" data-swap-exercise="${ex.id}">🔁 Cambiar</button></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1155,8 +1203,33 @@ function wireTabEvents() {
   const regenBtn = $('#regen-routine');
   if (regenBtn) regenBtn.addEventListener('click', () => {
     state.routineSeed += 1;
+    state.routineOverrides = {};
     render();
   });
+
+  $$('[data-swap-slot]').forEach((btn) => btn.addEventListener('click', () => {
+    const dayIndex = Number(btn.dataset.swapDay);
+    const slotIndex = Number(btn.dataset.swapSlot);
+    const current = state.exercises.find((e) => e.id === btn.dataset.swapExercise);
+    if (!current) return;
+    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, state.routineSeed));
+    const usedIdsThatDay = new Set(routine[dayIndex].exercises.map((e) => e.id));
+    const groupExercises = state.exercises
+      .filter((e) => e.muscle_group === current.muscle_group)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const currentIdx = groupExercises.findIndex((e) => e.id === current.id);
+    let next = null;
+    for (let step = 1; step <= groupExercises.length; step++) {
+      const candidate = groupExercises[(currentIdx + step) % groupExercises.length];
+      if (!usedIdsThatDay.has(candidate.id)) { next = candidate; break; }
+    }
+    if (!next) {
+      alert('No hay más ejercicios de este grupo muscular en el catálogo para sustituirlo.');
+      return;
+    }
+    state.routineOverrides[`${dayIndex}-${slotIndex}`] = next.id;
+    render();
+  }));
 
   $$('[data-open-exercise]').forEach((btn) => btn.addEventListener('click', () => {
     openExercise(btn.dataset.openExercise);
@@ -1268,6 +1341,7 @@ function wireTabEvents() {
         const { error } = await supabase.from('gym_profiles').upsert(payload);
         if (error) throw error;
         await loadUserData();
+        state.routineOverrides = {};
         okEl.hidden = false;
         render();
       } catch (err) {
