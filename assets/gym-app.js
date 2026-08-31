@@ -669,8 +669,8 @@ function renderApp() {
     <main class="app-main" id="app-main"></main>
   `;
   $$('.tab').forEach((btn) => btn.addEventListener('click', () => {
-    state.tab = btn.dataset.tab;
-    render();
+    if (btn.dataset.tab === state.tab) return;
+    goToTab(btn.dataset.tab);
   }));
   $('#logout-btn').addEventListener('click', async () => {
     await supabase.auth.signOut();
@@ -1183,8 +1183,13 @@ function wireTabEvents() {
 
   const backBtn = $('[data-back-to-rutina]');
   if (backBtn) backBtn.addEventListener('click', () => {
-    state.tab = 'rutina';
-    render();
+    // Coincide con lo que hace el botón "atrás" del móvil: reutiliza la
+    // misma entrada del historial en vez de apilar una nueva.
+    if (history.state && history.state.tab === 'ejercicio') {
+      history.back();
+    } else {
+      goToTab('rutina');
+    }
   });
 
   const logForm = $('#log-form');
@@ -1316,7 +1321,7 @@ async function reloadExerciseLogs() {
   ];
 }
 
-async function openExercise(exerciseId) {
+async function loadExerciseDetail(exerciseId) {
   state.selectedExerciseId = exerciseId;
   state.tab = 'ejercicio';
   state.exerciseDetailLoading = true;
@@ -1333,11 +1338,49 @@ async function openExercise(exerciseId) {
   render();
 }
 
+// Navegación con soporte del botón "atrás" del móvil: cada cambio de
+// pestaña o de ejercicio abierto se registra en el historial del
+// navegador, para que "atrás" vuelva a la pantalla anterior de la app en
+// vez de salir de ella directamente.
+function pushHistory(tab, exerciseId) {
+  const hash = tab === 'ejercicio' ? `#ejercicio-${exerciseId}` : `#${tab}`;
+  history.pushState({ tab, exerciseId: exerciseId || null }, '', hash);
+}
+
+function goToTab(tab) {
+  pushHistory(tab);
+  state.tab = tab;
+  render();
+}
+
+function openExercise(exerciseId) {
+  pushHistory('ejercicio', exerciseId);
+  loadExerciseDetail(exerciseId);
+}
+
+function handlePopState(e) {
+  const s = e.state;
+  if (!s || !s.tab) {
+    state.tab = 'resumen';
+    render();
+    return;
+  }
+  if (s.tab === 'ejercicio' && s.exerciseId) {
+    loadExerciseDetail(s.exerciseId);
+  } else {
+    state.tab = s.tab;
+    render();
+  }
+}
+
 async function init() {
   const { data: { session } } = await supabase.auth.getSession();
   state.session = session;
   if (session) await loadUserData();
+  history.replaceState({ tab: state.tab }, '', `#${state.tab}`);
   render();
+
+  window.addEventListener('popstate', handlePopState);
 
   supabase.auth.onAuthStateChange(async (_event, session) => {
     state.session = session;
@@ -1346,6 +1389,8 @@ async function init() {
     } else {
       state.profile = null;
       state.measurements = [];
+      state.tab = 'resumen';
+      history.replaceState(null, '', location.pathname);
     }
     render();
   });
