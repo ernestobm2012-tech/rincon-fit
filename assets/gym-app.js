@@ -801,6 +801,43 @@ function isDoneToday(exerciseId) {
   return state.allExerciseLogs.some((l) => l.exercise_id === exerciseId && l.logged_at === today);
 }
 
+// Registra una serie de hoy sin peso/reps (para el botón "Hecho hoy" de la
+// rutina y para añadir a mano un ejercicio que no estaba planificado).
+// Devuelve true si se guardó bien.
+async function markExerciseDoneToday(exerciseId) {
+  const payload = {
+    user_id: state.session.user.id,
+    exercise_id: exerciseId,
+    logged_at: todayISO(),
+    weight_kg: null,
+    reps: null,
+    sets: 1,
+  };
+  const { error } = await supabase.from('gym_exercise_logs').insert(payload);
+  if (error) {
+    alert('No se pudo guardar: ' + error.message);
+    return false;
+  }
+  // Recarga desde el servidor (en vez de usar un id local inventado) para
+  // que el botón "Quitar" pueda borrar la fila real que se acaba de crear.
+  await refreshAllExerciseLogs();
+  if (state.selectedExerciseId === exerciseId) {
+    await reloadExerciseLogs();
+  }
+  render();
+  return true;
+}
+
+async function refreshAllExerciseLogs() {
+  const userId = state.session.user.id;
+  const { data } = await supabase
+    .from('gym_exercise_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('logged_at', { ascending: true });
+  state.allExerciseLogs = data || [];
+}
+
 function viewRutina() {
   const p = state.profile;
   const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, state.routineSeed));
@@ -811,6 +848,15 @@ function viewRutina() {
   const todayRoutineIndex = weekdays.indexOf(todayWd);
   const dayIndex = state.selectedRoutineDay !== null ? state.selectedRoutineDay : (todayRoutineIndex !== -1 ? todayRoutineIndex : 0);
   const day = routine[dayIndex];
+
+  const plannedIds = new Set(day.exercises.map((ex) => ex.id));
+  const today = todayISO();
+  const extraLogsToday = state.allExerciseLogs.filter((l) => l.logged_at === today && !plannedIds.has(l.exercise_id));
+  const extraExerciseIdsToday = [...new Set(extraLogsToday.map((l) => l.exercise_id))];
+  const availableExtra = state.exercises
+    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
   return `
     <section class="panel">
@@ -861,6 +907,42 @@ function viewRutina() {
             }).join('')}
           </tbody>
         </table>`}
+      </div>
+
+      ${extraExerciseIdsToday.length > 0 ? `
+      <div class="routine-day">
+        <h3>Otros ejercicios que has hecho hoy</h3>
+        <p class="muted">No estaban en la rutina de hoy, pero quedan registrados igualmente.</p>
+        <table class="routine-table">
+          <thead><tr><th>Ejercicio</th><th></th></tr></thead>
+          <tbody>
+            ${extraExerciseIdsToday.map((exId) => {
+              const ex = state.exercises.find((e) => e.id === exId);
+              const log = extraLogsToday.find((l) => l.exercise_id === exId);
+              return `
+                <tr>
+                  <td>
+                    <button class="exercise-link" data-open-exercise="${exId}">${ex ? ex.name : 'Ejercicio'}</button>
+                    <span class="badge good">✓ Hecho hoy</span>
+                  </td>
+                  <td><button class="btn-ghost btn-sm" data-remove-extra-log="${log.id}">Quitar</button></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+
+      <div class="routine-day">
+        <h3>¿Has hecho algún ejercicio más hoy?</h3>
+        <p class="muted">Si has usado alguna máquina o ejercicio que no estaba en tu rutina de hoy, añádelo aquí para que quede en tu registro y en el calendario.</p>
+        ${availableExtra.length === 0 ? '<p class="chart-empty">Ya está todo el catálogo registrado hoy.</p>' : `
+        <div class="extra-exercise-row">
+          <select id="extra-exercise-select">
+            ${availableExtra.map((e) => `<option value="${e.id}">${e.name} (${MUSCLE_LABELS[e.muscle_group]})</option>`).join('')}
+          </select>
+          <button class="btn-secondary btn-sm" id="add-extra-exercise">✓ Marcar como hecho</button>
+        </div>`}
       </div>
     </section>
   `;
@@ -1283,26 +1365,30 @@ function wireTabEvents() {
   }));
 
   $$('[data-mark-done]').forEach((btn) => btn.addEventListener('click', async () => {
-    const exerciseId = btn.dataset.markDone;
     btn.disabled = true;
-    const payload = {
-      user_id: state.session.user.id,
-      exercise_id: exerciseId,
-      logged_at: todayISO(),
-      weight_kg: null,
-      reps: null,
-      sets: 1,
-    };
-    const { error } = await supabase.from('gym_exercise_logs').insert(payload);
+    const ok = await markExerciseDoneToday(btn.dataset.markDone);
+    if (!ok) btn.disabled = false;
+  }));
+
+  const addExtraBtn = $('#add-extra-exercise');
+  if (addExtraBtn) addExtraBtn.addEventListener('click', async () => {
+    const select = $('#extra-exercise-select');
+    if (!select || !select.value) return;
+    addExtraBtn.disabled = true;
+    const ok = await markExerciseDoneToday(select.value);
+    if (!ok) addExtraBtn.disabled = false;
+  });
+
+  $$('[data-remove-extra-log]').forEach((btn) => btn.addEventListener('click', async () => {
+    const logId = btn.dataset.removeExtraLog;
+    btn.disabled = true;
+    const { error } = await supabase.from('gym_exercise_logs').delete().eq('id', logId);
     if (error) {
       btn.disabled = false;
-      alert('No se pudo guardar: ' + error.message);
+      alert('No se pudo quitar: ' + error.message);
       return;
     }
-    state.allExerciseLogs.push({ id: `local-${Date.now()}`, ...payload });
-    if (state.selectedExerciseId === exerciseId) {
-      state.exerciseLogs = [...state.exerciseLogs, { id: `local-${Date.now()}`, ...payload }];
-    }
+    state.allExerciseLogs = state.allExerciseLogs.filter((l) => l.id !== logId);
     render();
   }));
 
