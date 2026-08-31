@@ -122,12 +122,21 @@
 
   .routine-day { margin-bottom: 22px; }
   .routine-day:last-child { margin-bottom: 0; }
+  .routine-day-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0; }
+  .day-pill {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 12px; border-radius: 999px; cursor: pointer; font-size: 0.85em;
+  }
+  .day-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .table-scroll { overflow-x: auto; }
   .routine-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
   .routine-table th, .routine-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   .routine-table th { color: var(--muted); font-weight: 600; font-size: 0.85em; }
 
   .measure-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 16px; }
+
+  .extra-exercise-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .extra-exercise-row select { flex: 1 1 220px; }
 
   .danger-zone { border-color: var(--bad); }
 
