@@ -18,6 +18,9 @@ const state = {
   exerciseDetailLoading: false,
   exerciseLogs: [],
   exerciseNote: '',
+  allExerciseLogs: [],
+  calendarMonth: (() => { const d = new Date(); d.setDate(1); return d; })(),
+  selectedCalendarDate: todayISO(),
 };
 
 const GOAL_LABELS = {
@@ -47,6 +50,24 @@ const MUSCLE_LABELS = {
   hombros: 'Hombros', brazos: 'Brazos', core: 'Core / abdomen', cardio: 'Cardio',
 };
 
+const INJURY_LABELS = {
+  hombro: 'Hombro', espalda_baja: 'Espalda baja', rodilla: 'Rodilla',
+  muñeca: 'Muñeca', codo: 'Codo', cadera: 'Cadera', tobillo: 'Tobillo',
+};
+
+function injuriesFieldsetHTML(selected) {
+  const sel = selected || [];
+  return `
+    <fieldset>
+      <legend>¿Alguna lesión o molestia? (opcional)</legend>
+      ${Object.entries(INJURY_LABELS).map(([v, l]) => `
+        <label class="radio"><input type="checkbox" name="injuries" value="${v}" ${sel.includes(v) ? 'checked' : ''} /> ${l}</label>
+      `).join('')}
+      <p class="muted" style="margin: 8px 0 0;">Evitaremos en lo posible los ejercicios de más riesgo para esa zona. No sustituye el consejo de un profesional.</p>
+    </fieldset>
+  `;
+}
+
 // ---------------------------------------------------------------------------
 // Utilidades
 // ---------------------------------------------------------------------------
@@ -54,7 +75,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const fmt1 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—' : Number(n).toFixed(1));
 const fmt0 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—' : Math.round(n));
-const todayISO = () => new Date().toISOString().slice(0, 10);
+function todayISO() { return new Date().toISOString().slice(0, 10); }
 
 function ageFromBirthDate(birthDate) {
   if (!birthDate) return null;
@@ -243,15 +264,27 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
+function isSafeForInjuries(exercise, injuries) {
+  if (!injuries || injuries.length === 0) return true;
+  const caution = exercise.caution_for || [];
+  return !caution.some((zone) => injuries.includes(zone));
+}
+
 function generateRoutine(profile, exercises, seed) {
   const days = SPLITS[profile.days_per_week] || SPLITS[3];
   const perGroupCount = 2;
+  const injuries = profile.injuries || [];
   return days.map((groups, i) => {
     const dayExercises = [];
     groups.forEach((group) => {
-      const pool = exercises.filter(
-        (e) => e.muscle_group === group && e.goals.includes(profile.goal)
+      let pool = exercises.filter(
+        (e) => e.muscle_group === group && e.goals.includes(profile.goal) && isSafeForInjuries(e, injuries)
       );
+      if (pool.length === 0) {
+        // Sin alternativa segura para esta lesión: mejor mostrar la opción
+        // normal (avisada en el detalle) que dejar el hueco vacío.
+        pool = exercises.filter((e) => e.muscle_group === group && e.goals.includes(profile.goal));
+      }
       const picked = seededShuffle(pool, seed + i + group.length).slice(0, perGroupCount);
       dayExercises.push(...picked);
     });
@@ -575,6 +608,7 @@ function renderOnboarding() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
+        ${injuriesFieldsetHTML([])}
         <p class="field-error" id="onboarding-error" hidden></p>
         <button type="submit" class="btn-primary">Empezar</button>
       </form>
@@ -596,6 +630,7 @@ function renderOnboarding() {
       activity_level: fd.get('activity_level'),
       goal: fd.get('goal'),
       days_per_week: Number(fd.get('days_per_week')),
+      injuries: fd.getAll('injuries'),
     };
     const weightKg = Number(fd.get('weight_kg'));
     try {
@@ -625,7 +660,7 @@ function renderApp() {
     <header class="app-header">
       <div class="brand">Rincón Fit</div>
       <nav class="tabs">
-        ${['resumen', 'rutina', 'dieta', 'medidas', 'perfil'].map((t) => `
+        ${['resumen', 'rutina', 'dieta', 'medidas', 'calendario', 'perfil'].map((t) => `
           <button class="tab ${state.tab === t ? 'active' : ''}" data-tab="${t}">${tabLabel(t)}</button>
         `).join('')}
       </nav>
@@ -648,12 +683,13 @@ function renderApp() {
   else if (state.tab === 'medidas') main.innerHTML = viewMedidas();
   else if (state.tab === 'perfil') main.innerHTML = viewPerfil();
   else if (state.tab === 'ejercicio') main.innerHTML = viewExerciseDetail();
+  else if (state.tab === 'calendario') main.innerHTML = viewCalendario();
 
   wireTabEvents();
 }
 
 function tabLabel(t) {
-  return { resumen: 'Resumen', rutina: 'Rutina', dieta: 'Dieta', medidas: 'Medidas', perfil: 'Perfil' }[t];
+  return { resumen: 'Resumen', rutina: 'Rutina', dieta: 'Dieta', medidas: 'Medidas', calendario: 'Calendario', perfil: 'Perfil' }[t];
 }
 
 function viewResumen() {
@@ -701,6 +737,7 @@ function viewRutina() {
   const p = state.profile;
   const routine = generateRoutine(p, state.exercises, state.routineSeed);
   const vol = GOAL_VOLUME[p.goal];
+  const injuries = p.injuries || [];
   return `
     <section class="panel">
       <div class="panel-head">
@@ -708,6 +745,7 @@ function viewRutina() {
         <button class="btn-secondary" id="regen-routine">Generar otra variante</button>
       </div>
       <p>Pauta general: <strong>${vol.sets} series</strong> de <strong>${vol.reps} repeticiones</strong>, descanso de <strong>${vol.rest}</strong> entre series. Ajusta el peso para que las últimas 2 repeticiones cuesten de verdad sin perder la técnica.</p>
+      ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
       ${routine.map((day) => `
         <div class="routine-day">
           <h3>${day.label}</h3>
@@ -720,6 +758,7 @@ function viewRutina() {
                   <td>
                     <button class="exercise-link" data-open-exercise="${ex.id}">${ex.name}</button>
                     ${levelBars(ex.difficulty)}
+                    ${!isSafeForInjuries(ex, injuries) ? '<span class="badge warn">⚠️ revisa tu lesión</span>' : ''}
                     <p class="muted">${ex.instructions}</p>
                   </td>
                   <td>${ex.machine}</td>
@@ -872,6 +911,9 @@ function viewExerciseDetail() {
   const goal = state.profile ? state.profile.goal : 'definicion';
   const defaultSets = GOAL_VOLUME[goal].sets;
 
+  const injuries = state.profile.injuries || [];
+  const riskyZones = (ex.caution_for || []).filter((z) => injuries.includes(z));
+
   return `
     <section class="panel exercise-detail">
       <button class="btn-ghost" data-back-to-rutina>← Volver a la rutina</button>
@@ -886,6 +928,7 @@ function viewExerciseDetail() {
           ${bodyDiagram(ex.muscle_group)}
         </div>
       </div>
+      ${riskyZones.length > 0 ? `<div class="tip-box warn-box">⚠️ <strong>Puede no ser adecuado para tu lesión de ${riskyZones.map((z) => INJURY_LABELS[z] || z).join(' / ')}.</strong> Prueba una alternativa del mismo grupo muscular o consulta a un fisioterapeuta antes de hacerlo.</div>` : ''}
       ${ex.photo_ref ? '<p class="muted photo-credit">Fotos: banco de imágenes de dominio público (Free Exercise DB).</p>' : ''}
       <a class="btn-secondary" href="https://www.youtube.com/results?search_query=${videoQuery}" target="_blank" rel="noopener">▶ Buscar demostración en vídeo</a>
 
@@ -939,6 +982,98 @@ function viewExerciseDetail() {
   `;
 }
 
+const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const MONTH_LABELS = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+function dateToISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dayHasActivity(dateStr) {
+  return state.measurements.some((m) => m.measured_at === dateStr)
+    || state.allExerciseLogs.some((l) => l.logged_at === dateStr);
+}
+
+function viewCalendario() {
+  const month = state.calendarMonth;
+  const year = month.getFullYear();
+  const monthIdx = month.getMonth();
+  const firstOfMonth = new Date(year, monthIdx, 1);
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+  const leadingBlanks = (firstOfMonth.getDay() + 6) % 7; // lunes = 0
+
+  const cells = [];
+  for (let i = 0; i < leadingBlanks; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const today = todayISO();
+
+  const grid = cells.map((d) => {
+    if (d === null) return `<span class="cal-cell cal-empty"></span>`;
+    const dateStr = dateToISO(new Date(year, monthIdx, d));
+    const classes = ['cal-cell'];
+    if (dateStr === today) classes.push('cal-today');
+    if (dateStr === state.selectedCalendarDate) classes.push('cal-selected');
+    if (dayHasActivity(dateStr)) classes.push('cal-active');
+    return `<button class="${classes.join(' ')}" data-cal-day="${dateStr}">${d}</button>`;
+  }).join('');
+
+  const selected = state.selectedCalendarDate;
+  const selMeasurement = state.measurements.find((m) => m.measured_at === selected);
+  const selLogs = state.allExerciseLogs.filter((l) => l.logged_at === selected);
+  const selLogsByExercise = {};
+  selLogs.forEach((l) => {
+    if (!selLogsByExercise[l.exercise_id]) selLogsByExercise[l.exercise_id] = [];
+    selLogsByExercise[l.exercise_id].push(l);
+  });
+
+  return `
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Calendario</h2>
+        <div>
+          <button class="btn-ghost btn-sm" id="cal-prev-month">← Mes anterior</button>
+          <button class="btn-ghost btn-sm" id="cal-next-month">Mes siguiente →</button>
+        </div>
+      </div>
+      <h3>${MONTH_LABELS[monthIdx]} ${year}</h3>
+      <div class="cal-weekdays">${WEEKDAY_LABELS.map((w) => `<span>${w}</span>`).join('')}</div>
+      <div class="cal-grid">${grid}</div>
+      <p class="muted">El punto marca los días con alguna medición o serie registrada. Toca un día para ver el detalle.</p>
+    </section>
+    <section class="panel">
+      <h3>${new Date(selected + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+      ${!selMeasurement && selLogs.length === 0 ? '<p class="chart-empty">Sin actividad registrada este día.</p>' : ''}
+      ${selMeasurement ? `
+        <h4>Medición</h4>
+        <p>Peso: <strong>${fmt1(selMeasurement.weight_kg)} kg</strong>
+          ${selMeasurement.waist_cm ? ` · Cintura: <strong>${fmt1(selMeasurement.waist_cm)} cm</strong>` : ''}
+          ${selMeasurement.chest_cm ? ` · Pecho: <strong>${fmt1(selMeasurement.chest_cm)} cm</strong>` : ''}
+          ${selMeasurement.arm_cm ? ` · Brazo: <strong>${fmt1(selMeasurement.arm_cm)} cm</strong>` : ''}
+          ${selMeasurement.leg_cm ? ` · Pierna: <strong>${fmt1(selMeasurement.leg_cm)} cm</strong>` : ''}
+        </p>
+      ` : ''}
+      ${Object.keys(selLogsByExercise).length > 0 ? `
+        <h4>Entrenamiento</h4>
+        <table class="routine-table">
+          <thead><tr><th>Ejercicio</th><th>Series registradas</th></tr></thead>
+          <tbody>
+            ${Object.entries(selLogsByExercise).map(([exerciseId, logs]) => {
+              const ex = state.exercises.find((e) => e.id === exerciseId);
+              const summary = logs.map((l) => `${fmt1(l.weight_kg)} kg x ${l.reps ?? '?'} (${l.sets} series)`).join(' · ');
+              return `<tr><td>${ex ? ex.name : 'Ejercicio'}</td><td>${summary}</td></tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      ` : ''}
+    </section>
+  `;
+}
+
 function viewPerfil() {
   const p = state.profile;
   return `
@@ -969,6 +1104,7 @@ function viewPerfil() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === p.days_per_week ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
+        ${injuriesFieldsetHTML(p.injuries)}
         <p class="field-error" id="profile-error" hidden></p>
         <p class="field-ok" id="profile-ok" hidden>Guardado.</p>
         <button type="submit" class="btn-primary">Guardar cambios</button>
@@ -1025,6 +1161,25 @@ function wireTabEvents() {
   $$('[data-open-exercise]').forEach((btn) => btn.addEventListener('click', () => {
     openExercise(btn.dataset.openExercise);
   }));
+
+  $$('[data-cal-day]').forEach((btn) => btn.addEventListener('click', () => {
+    state.selectedCalendarDate = btn.dataset.calDay;
+    render();
+  }));
+  const calPrev = $('#cal-prev-month');
+  if (calPrev) calPrev.addEventListener('click', () => {
+    const m = new Date(state.calendarMonth);
+    m.setMonth(m.getMonth() - 1);
+    state.calendarMonth = m;
+    render();
+  });
+  const calNext = $('#cal-next-month');
+  if (calNext) calNext.addEventListener('click', () => {
+    const m = new Date(state.calendarMonth);
+    m.setMonth(m.getMonth() + 1);
+    state.calendarMonth = m;
+    render();
+  });
 
   const backBtn = $('[data-back-to-rutina]');
   if (backBtn) backBtn.addEventListener('click', () => {
@@ -1102,6 +1257,7 @@ function wireTabEvents() {
         activity_level: fd.get('activity_level'),
         goal: fd.get('goal'),
         days_per_week: Number(fd.get('days_per_week')),
+        injuries: fd.getAll('injuries'),
       };
       try {
         const { error } = await supabase.from('gym_profiles').upsert(payload);
@@ -1133,14 +1289,16 @@ function wireTabEvents() {
 // ---------------------------------------------------------------------------
 async function loadUserData() {
   const userId = state.session.user.id;
-  const [{ data: profile }, { data: measurements }, { data: exercises }] = await Promise.all([
+  const [{ data: profile }, { data: measurements }, { data: exercises }, { data: allLogs }] = await Promise.all([
     supabase.from('gym_profiles').select('*').eq('id', userId).maybeSingle(),
     supabase.from('gym_measurements').select('*').eq('user_id', userId).order('measured_at', { ascending: true }),
     state.exercises.length ? Promise.resolve({ data: state.exercises }) : supabase.from('gym_exercises').select('*').order('sort_order'),
+    supabase.from('gym_exercise_logs').select('*').eq('user_id', userId).order('logged_at', { ascending: true }),
   ]);
   state.profile = profile || null;
   state.measurements = measurements || [];
   state.exercises = exercises || [];
+  state.allExerciseLogs = allLogs || [];
 }
 
 async function reloadExerciseLogs() {
@@ -1152,6 +1310,10 @@ async function reloadExerciseLogs() {
     .eq('exercise_id', state.selectedExerciseId)
     .order('logged_at', { ascending: true });
   state.exerciseLogs = data || [];
+  state.allExerciseLogs = [
+    ...state.allExerciseLogs.filter((l) => l.exercise_id !== state.selectedExerciseId),
+    ...state.exerciseLogs,
+  ];
 }
 
 async function openExercise(exerciseId) {

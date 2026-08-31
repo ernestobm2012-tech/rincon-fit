@@ -199,8 +199,24 @@
     background: rgba(224,168,69,0.12); border: 1px solid var(--warn); border-radius: 10px;
     padding: 12px 14px; margin-bottom: 16px;
   }
+  .tip-box.warn-box { background: rgba(224,100,91,0.12); border-color: var(--bad); }
 
   .exercise-detail h3 { margin-top: 22px; }
+
+  .cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
+  .cal-weekdays { color: var(--muted); font-size: 0.8em; margin: 10px 0 6px; }
+  .cal-cell {
+    aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); cursor: pointer; font-size: 0.9em; position: relative;
+  }
+  .cal-cell.cal-empty { border: none; background: transparent; cursor: default; }
+  .cal-cell.cal-today { border-color: var(--accent); }
+  .cal-cell.cal-selected { background: var(--accent); color: #fff; }
+  .cal-cell.cal-active::after {
+    content: ''; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+    width: 5px; height: 5px; border-radius: 50%; background: var(--accent-2);
+  }
+  .cal-cell.cal-selected.cal-active::after { background: #fff; }
 
   @media (max-width: 560px) {
     .app-header { gap: 10px; }
