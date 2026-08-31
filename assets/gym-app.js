@@ -365,38 +365,39 @@ function rotatePoolOrder(pool, seed, step) {
   return pool.map((_, idx) => pool[(offset + idx) % pool.length]);
 }
 
+// Cuántos ejercicios saldrán de cada grupo muscular un día dado, repartiendo
+// los huecos que dejen los grupos con poco catálogo (p. ej. glúteos) entre
+// el resto para acercarse a DAY_EXERCISE_TARGET. Depende solo del tamaño de
+// cada catálogo (no de la semana), así que es igual semana a semana; esto
+// permite luego rotar cada grupo exactamente su propio número de ejercicios
+// en vez de un paso genérico, y así no repetir nada de una semana a otra
+// mientras el catálogo del grupo llegue a duplicar ese número.
+function groupCountsForDay(poolLengths) {
+  const basePerGroup = Math.max(2, Math.floor(DAY_EXERCISE_TARGET / poolLengths.length));
+  const counts = poolLengths.map((len) => Math.min(basePerGroup, len));
+  let total = counts.reduce((sum, c) => sum + c, 0);
+  let addedMore = true;
+  while (total < DAY_EXERCISE_TARGET && addedMore) {
+    addedMore = false;
+    for (let gi = 0; gi < counts.length && total < DAY_EXERCISE_TARGET; gi++) {
+      if (counts[gi] < poolLengths[gi]) {
+        counts[gi]++;
+        total++;
+        addedMore = true;
+      }
+    }
+  }
+  return counts;
+}
+
 function generateRoutine(profile, exercises, seed) {
   const days = SPLITS[profile.days_per_week] || SPLITS[3];
   const injuries = profile.injuries || [];
 
   return days.map((groups, i) => {
-    const basePerGroup = Math.max(2, Math.floor(DAY_EXERCISE_TARGET / groups.length));
-    // Catálogo de cada grupo en un orden estable (no depende del seed),
-    // rotado para empezar en la ventana de esta semana: así el "hueco
-    // extra" de más abajo también sigue rotando en vez de repetir siempre
-    // los mismos ejercicios de relleno.
-    const groupPools = groups.map((group) => {
-      const stablePool = seededShuffle(exercisePoolForGroup(exercises, group, injuries), i + group.length);
-      return rotatePoolOrder(stablePool, seed, basePerGroup);
-    });
-    const picked = groupPools.map((pool) => pool.slice(0, basePerGroup));
-    let total = picked.reduce((sum, arr) => sum + arr.length, 0);
-
-    // Si algún grupo tiene poco catálogo (p. ej. glúteos), reparte los
-    // huecos que deja entre los demás grupos del día para acercarse a
-    // DAY_EXERCISE_TARGET siempre que el catálogo lo permita.
-    let addedMore = true;
-    while (total < DAY_EXERCISE_TARGET && addedMore) {
-      addedMore = false;
-      for (let gi = 0; gi < groupPools.length && total < DAY_EXERCISE_TARGET; gi++) {
-        const nextIndex = picked[gi].length;
-        if (nextIndex < groupPools[gi].length) {
-          picked[gi].push(groupPools[gi][nextIndex]);
-          total++;
-          addedMore = true;
-        }
-      }
-    }
+    const stablePools = groups.map((group) => seededShuffle(exercisePoolForGroup(exercises, group, injuries), i + group.length));
+    const counts = groupCountsForDay(stablePools.map((pool) => pool.length));
+    const picked = stablePools.map((pool, gi) => rotatePoolOrder(pool, seed, counts[gi]).slice(0, counts[gi]));
 
     return { label: `Día ${i + 1} — ${groups.map((g) => MUSCLE_LABELS[g]).join(' + ')}`, exercises: picked.flat() };
   });
@@ -960,7 +961,7 @@ function viewRutina() {
                     <p class="muted">${ex.instructions}</p>
                   </td>
                   <td>${ex.machine}</td>
-                  <td>${vol.sets} x ${vol.reps}</td>
+                  <td>${ex.muscle_group === 'cardio' ? 'Velocidad y tiempo' : `${vol.sets} x ${vol.reps}`}</td>
                   <td>
                     <button class="btn-ghost btn-sm" data-swap-day="${dayIndex}" data-swap-slot="${slotIndex}" data-swap-exercise="${ex.id}">🔁 Cambiar</button>
                     ${done
@@ -1064,6 +1065,7 @@ function viewMedidas() {
   const p = state.profile;
   const rows = state.measurements.slice().reverse();
   const wPoints = state.measurements.filter((x) => x.waist_cm != null).map((x) => ({ x: new Date(x.measured_at), y: Number(x.waist_cm) }));
+  const abdomenPoints = state.measurements.filter((x) => x.upper_abdomen_cm != null).map((x) => ({ x: new Date(x.measured_at), y: Number(x.upper_abdomen_cm) }));
   const bmiPoints = state.measurements
     .filter((x) => x.weight_kg != null)
     .map((x) => ({ x: new Date(x.measured_at), y: bmi(Number(x.weight_kg), p.height_cm) }));
@@ -1075,6 +1077,7 @@ function viewMedidas() {
         <label>Fecha <input type="date" name="measured_at" value="${todayISO()}" max="${todayISO()}" required /></label>
         <label>Peso (kg) <input type="number" name="weight_kg" step="0.1" min="30" max="400" /></label>
         <label>Cintura (cm) <input type="number" name="waist_cm" step="0.1" min="30" max="300" /></label>
+        <label>Tripa, encima del ombligo (cm) <input type="number" name="upper_abdomen_cm" step="0.1" min="30" max="300" /></label>
         <label>Pecho (cm) <input type="number" name="chest_cm" step="0.1" min="30" max="300" /></label>
         <label>Brazo (cm) <input type="number" name="arm_cm" step="0.1" min="10" max="100" /></label>
         <label>Pierna (cm) <input type="number" name="leg_cm" step="0.1" min="20" max="150" /></label>
@@ -1087,6 +1090,8 @@ function viewMedidas() {
       <h2>Evolución</h2>
       <h3>Cintura</h3>
       ${lineChart(wPoints, { color: '#e08e45', unit: ' cm' })}
+      <h3>Tripa (encima del ombligo)</h3>
+      ${lineChart(abdomenPoints, { color: '#c98bd8', unit: ' cm' })}
       <h3>IMC</h3>
       ${lineChart(bmiPoints, { color: '#7bb661', unit: '' })}
     </section>
@@ -1095,13 +1100,14 @@ function viewMedidas() {
       ${rows.length === 0 ? '<p class="chart-empty">Todavía no hay mediciones.</p>' : `
       <div class="table-scroll">
       <table class="routine-table">
-        <thead><tr><th>Fecha</th><th>Peso</th><th>Cintura</th><th>Pecho</th><th>Brazo</th><th>Pierna</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Peso</th><th>Cintura</th><th>Tripa</th><th>Pecho</th><th>Brazo</th><th>Pierna</th><th></th></tr></thead>
         <tbody>
           ${rows.map((r) => `
             <tr>
               <td>${new Date(r.measured_at).toLocaleDateString('es-ES')}</td>
               <td>${fmt1(r.weight_kg)}</td>
               <td>${fmt1(r.waist_cm)}</td>
+              <td>${fmt1(r.upper_abdomen_cm)}</td>
               <td>${fmt1(r.chest_cm)}</td>
               <td>${fmt1(r.arm_cm)}</td>
               <td>${fmt1(r.leg_cm)}</td>
@@ -1130,8 +1136,16 @@ function viewExerciseDetail() {
   }
 
   const logs = state.exerciseLogs;
-  const maxWeight = logs.reduce((m, l) => (l.weight_kg != null ? Math.max(m, Number(l.weight_kg)) : m), 0);
+  const isCardio = ex.muscle_group === 'cardio';
   const last30 = logs.filter((l) => (Date.now() - new Date(l.logged_at + 'T00:00:00')) / 86400000 <= 30);
+
+  // Los ejercicios de cardio (cinta, bici...) no se miden en peso/reps sino
+  // en velocidad y tiempo, así que llevan sus propias estadísticas y su
+  // propio formulario de registro.
+  const maxSpeed = logs.reduce((m, l) => (l.speed_kmh != null ? Math.max(m, Number(l.speed_kmh)) : m), 0);
+  const minutes30 = last30.reduce((s, l) => s + (Number(l.duration_min) || 0), 0);
+
+  const maxWeight = logs.reduce((m, l) => (l.weight_kg != null ? Math.max(m, Number(l.weight_kg)) : m), 0);
   const volume30 = last30.reduce((s, l) => s + (Number(l.weight_kg) || 0) * (Number(l.reps) || 0) * (Number(l.sets) || 1), 0);
   const est1RM = logs.reduce((m, l) => {
     if (l.weight_kg == null || l.reps == null) return m;
@@ -1140,8 +1154,9 @@ function viewExerciseDetail() {
 
   const byDay = {};
   logs.forEach((l) => {
-    if (l.weight_kg == null) return;
-    byDay[l.logged_at] = Math.max(byDay[l.logged_at] || 0, Number(l.weight_kg));
+    const value = isCardio ? l.speed_kmh : l.weight_kg;
+    if (value == null) return;
+    byDay[l.logged_at] = Math.max(byDay[l.logged_at] || 0, Number(value));
   });
   const chartPoints = Object.entries(byDay)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1184,6 +1199,40 @@ function viewExerciseDetail() {
       <p class="field-ok" id="note-ok" hidden>Guardado.</p>
 
       <h3>Tu progreso</h3>
+      ${isCardio ? `
+      <div class="card-grid">
+        <div class="stat-card"><span class="stat-label">Velocidad máxima</span><span class="stat-value">${maxSpeed ? fmt1(maxSpeed) + ' km/h' : '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">Minutos (30 días)</span><span class="stat-value">${minutes30 ? fmt0(minutes30) + ' min' : '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">Sesiones registradas</span><span class="stat-value">${logs.length || '—'}</span></div>
+      </div>
+      ${chartPoints.length >= 2 ? lineChart(chartPoints, { color: '#5b8def', unit: ' km/h' }) : '<p class="chart-empty">Registra al menos 2 sesiones para ver tu evolución de velocidad.</p>'}
+
+      <h3>Registrar sesión de hoy</h3>
+      <form id="log-form" class="measure-form">
+        <label>Fecha <input type="date" name="logged_at" value="${todayISO()}" max="${todayISO()}" required /></label>
+        <label>Velocidad (km/h) <input type="number" name="speed_kmh" step="0.1" min="0" max="40" /></label>
+        <label>Duración (min) <input type="number" name="duration_min" step="1" min="0" max="600" /></label>
+        <p class="field-error" id="log-error" hidden></p>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+
+      ${logs.length ? `
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Fecha</th><th>Velocidad</th><th>Duración</th><th></th></tr></thead>
+        <tbody>
+          ${logs.slice().reverse().slice(0, 10).map((l) => `
+            <tr>
+              <td>${new Date(l.logged_at + 'T00:00:00').toLocaleDateString('es-ES')}</td>
+              <td>${l.speed_kmh != null ? fmt1(l.speed_kmh) + ' km/h' : '—'}</td>
+              <td>${l.duration_min != null ? fmt0(l.duration_min) + ' min' : '—'}</td>
+              <td><button class="btn-ghost btn-sm" data-delete-log="${l.id}">Borrar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>` : ''}
+      ` : `
       <div class="card-grid">
         <div class="stat-card"><span class="stat-label">Peso máximo</span><span class="stat-value">${maxWeight ? fmt1(maxWeight) + ' kg' : '—'}</span></div>
         <div class="stat-card"><span class="stat-label">Volumen (30 días)</span><span class="stat-value">${volume30 ? fmt0(volume30) + ' kg' : '—'}</span></div>
@@ -1218,6 +1267,7 @@ function viewExerciseDetail() {
         </tbody>
       </table>
       </div>` : ''}
+      `}
     </section>
   `;
 }
@@ -1292,6 +1342,7 @@ function viewCalendario() {
         <h4>Medición</h4>
         <p>Peso: <strong>${fmt1(selMeasurement.weight_kg)} kg</strong>
           ${selMeasurement.waist_cm ? ` · Cintura: <strong>${fmt1(selMeasurement.waist_cm)} cm</strong>` : ''}
+          ${selMeasurement.upper_abdomen_cm ? ` · Tripa: <strong>${fmt1(selMeasurement.upper_abdomen_cm)} cm</strong>` : ''}
           ${selMeasurement.chest_cm ? ` · Pecho: <strong>${fmt1(selMeasurement.chest_cm)} cm</strong>` : ''}
           ${selMeasurement.arm_cm ? ` · Brazo: <strong>${fmt1(selMeasurement.arm_cm)} cm</strong>` : ''}
           ${selMeasurement.leg_cm ? ` · Pierna: <strong>${fmt1(selMeasurement.leg_cm)} cm</strong>` : ''}
@@ -1367,7 +1418,7 @@ function wireTabEvents() {
       const errorEl = $('#measure-error');
       errorEl.hidden = true;
       const payload = { user_id: state.session.user.id, measured_at: fd.get('measured_at') };
-      ['weight_kg', 'waist_cm', 'chest_cm', 'arm_cm', 'leg_cm'].forEach((k) => {
+      ['weight_kg', 'waist_cm', 'upper_abdomen_cm', 'chest_cm', 'arm_cm', 'leg_cm'].forEach((k) => {
         const v = fd.get(k);
         payload[k] = v ? Number(v) : null;
       });
@@ -1498,14 +1549,25 @@ function wireTabEvents() {
       const fd = new FormData(e.target);
       const errorEl = $('#log-error');
       errorEl.hidden = true;
-      const payload = {
-        user_id: state.session.user.id,
-        exercise_id: state.selectedExerciseId,
-        logged_at: fd.get('logged_at'),
-        weight_kg: fd.get('weight_kg') ? Number(fd.get('weight_kg')) : null,
-        reps: fd.get('reps') ? Number(fd.get('reps')) : null,
-        sets: fd.get('sets') ? Number(fd.get('sets')) : 1,
-      };
+      const currentExercise = state.exercises.find((e2) => e2.id === state.selectedExerciseId);
+      const isCardio = currentExercise && currentExercise.muscle_group === 'cardio';
+      const payload = isCardio
+        ? {
+            user_id: state.session.user.id,
+            exercise_id: state.selectedExerciseId,
+            logged_at: fd.get('logged_at'),
+            speed_kmh: fd.get('speed_kmh') ? Number(fd.get('speed_kmh')) : null,
+            duration_min: fd.get('duration_min') ? Number(fd.get('duration_min')) : null,
+            sets: 1,
+          }
+        : {
+            user_id: state.session.user.id,
+            exercise_id: state.selectedExerciseId,
+            logged_at: fd.get('logged_at'),
+            weight_kg: fd.get('weight_kg') ? Number(fd.get('weight_kg')) : null,
+            reps: fd.get('reps') ? Number(fd.get('reps')) : null,
+            sets: fd.get('sets') ? Number(fd.get('sets')) : 1,
+          };
       try {
         const { error } = await supabase.from('gym_exercise_logs').insert(payload);
         if (error) throw error;
