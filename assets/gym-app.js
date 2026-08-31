@@ -22,6 +22,7 @@ const state = {
   allExerciseLogs: [],
   calendarMonth: (() => { const d = new Date(); d.setDate(1); return d; })(),
   selectedCalendarDate: todayISO(),
+  selectedRoutineDay: null,
 };
 
 const GOAL_LABELS = {
@@ -249,6 +250,23 @@ const SPLITS = {
   5: [['pecho', 'core'], ['espalda', 'cardio'], ['piernas', 'gluteos'], ['hombros', 'core'], ['brazos', 'cardio']],
   6: [['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'gluteos'], ['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'cardio']],
 };
+
+// A qué día de la semana (0 = lunes ... 6 = domingo) corresponde cada día
+// de la rutina, para que "Rutina" muestre por defecto el entrenamiento de
+// hoy en vez de todos los días seguidos (y así no se mezclen ejercicios de
+// días distintos).
+const ROUTINE_WEEKDAYS = {
+  2: [0, 3],
+  3: [0, 2, 4],
+  4: [0, 1, 3, 4],
+  5: [0, 1, 2, 4, 5],
+  6: [0, 1, 2, 3, 4, 5],
+};
+const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+function todayWeekdayIndex() {
+  return (new Date().getDay() + 6) % 7;
+}
 
 const GOAL_VOLUME = {
   perdida_peso: { sets: 3, reps: '12-15', rest: '30-45 seg' },
@@ -778,11 +796,22 @@ function viewResumen() {
   `;
 }
 
+function isDoneToday(exerciseId) {
+  const today = todayISO();
+  return state.allExerciseLogs.some((l) => l.exercise_id === exerciseId && l.logged_at === today);
+}
+
 function viewRutina() {
   const p = state.profile;
   const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, state.routineSeed));
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
+  const weekdays = ROUTINE_WEEKDAYS[p.days_per_week] || ROUTINE_WEEKDAYS[3];
+  const todayWd = todayWeekdayIndex();
+  const todayRoutineIndex = weekdays.indexOf(todayWd);
+  const dayIndex = state.selectedRoutineDay !== null ? state.selectedRoutineDay : (todayRoutineIndex !== -1 ? todayRoutineIndex : 0);
+  const day = routine[dayIndex];
+
   return `
     <section class="panel">
       <div class="panel-head">
@@ -792,15 +821,26 @@ function viewRutina() {
       <p>Pauta general: <strong>${vol.sets} series</strong> de <strong>${vol.reps} repeticiones</strong>, descanso de <strong>${vol.rest}</strong> entre series. Ajusta el peso para que las últimas 2 repeticiones cuesten de verdad sin perder la técnica.</p>
       <p class="muted">¿No tienes alguna de estas máquinas en tu gimnasio? Pulsa "Cambiar" para sustituirla por otra del mismo grupo muscular.</p>
       ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
-      ${routine.map((day, dayIndex) => `
-        <div class="routine-day">
-          <h3>${day.label}</h3>
-          ${day.exercises.length === 0 ? '<p class="chart-empty">No hay ejercicios suficientes en el catálogo para este grupo.</p>' : `
-          ${day.exercises.length < 6 && injuries.length > 0 ? '<p class="muted">Hoy salen menos ejercicios de lo habitual: hay pocas alternativas seguras para tu lesión en este grupo muscular.</p>' : ''}
-          <table class="routine-table">
-            <thead><tr><th>Ejercicio</th><th>Máquina / equipo</th><th>Series x reps</th><th></th></tr></thead>
-            <tbody>
-              ${day.exercises.map((ex, slotIndex) => `
+
+      <div class="routine-day-tabs">
+        ${routine.map((d, i) => {
+          const wd = weekdays[i];
+          const isToday = i === todayRoutineIndex;
+          return `<button class="day-pill ${i === dayIndex ? 'active' : ''}" data-routine-day="${i}">${wd !== undefined ? WEEKDAY_NAMES[wd] : `Día ${i + 1}`}${isToday ? ' · hoy' : ''}</button>`;
+        }).join('')}
+      </div>
+      ${todayRoutineIndex === -1 ? '<p class="muted">Hoy no tienes entrenamiento asignado en tu rutina (día de descanso). Puedes consultar cualquier otro día arriba.</p>' : ''}
+
+      <div class="routine-day">
+        <h3>${day.label}</h3>
+        ${day.exercises.length === 0 ? '<p class="chart-empty">No hay ejercicios suficientes en el catálogo para este grupo.</p>' : `
+        ${day.exercises.length < 6 && injuries.length > 0 ? '<p class="muted">Hoy salen menos ejercicios de lo habitual: hay pocas alternativas seguras para tu lesión en este grupo muscular.</p>' : ''}
+        <table class="routine-table">
+          <thead><tr><th>Ejercicio</th><th>Máquina / equipo</th><th>Series x reps</th><th></th></tr></thead>
+          <tbody>
+            ${day.exercises.map((ex, slotIndex) => {
+              const done = isDoneToday(ex.id);
+              return `
                 <tr>
                   <td>
                     <button class="exercise-link" data-open-exercise="${ex.id}">${ex.name}</button>
@@ -810,13 +850,18 @@ function viewRutina() {
                   </td>
                   <td>${ex.machine}</td>
                   <td>${vol.sets} x ${vol.reps}</td>
-                  <td><button class="btn-ghost btn-sm" data-swap-day="${dayIndex}" data-swap-slot="${slotIndex}" data-swap-exercise="${ex.id}">🔁 Cambiar</button></td>
+                  <td>
+                    <button class="btn-ghost btn-sm" data-swap-day="${dayIndex}" data-swap-slot="${slotIndex}" data-swap-exercise="${ex.id}">🔁 Cambiar</button>
+                    ${done
+                      ? '<span class="badge good">✓ Hecho hoy</span>'
+                      : `<button class="btn-ghost btn-sm" data-mark-done="${ex.id}">✓ Hecho hoy</button>`}
+                  </td>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>`}
-        </div>
-      `).join('')}
+              `;
+            }).join('')}
+          </tbody>
+        </table>`}
+      </div>
     </section>
   `;
 }
@@ -1204,6 +1249,7 @@ function wireTabEvents() {
   if (regenBtn) regenBtn.addEventListener('click', () => {
     state.routineSeed += 1;
     state.routineOverrides = {};
+    state.selectedRoutineDay = null;
     render();
   });
 
@@ -1228,6 +1274,35 @@ function wireTabEvents() {
       return;
     }
     state.routineOverrides[`${dayIndex}-${slotIndex}`] = next.id;
+    render();
+  }));
+
+  $$('[data-routine-day]').forEach((btn) => btn.addEventListener('click', () => {
+    state.selectedRoutineDay = Number(btn.dataset.routineDay);
+    render();
+  }));
+
+  $$('[data-mark-done]').forEach((btn) => btn.addEventListener('click', async () => {
+    const exerciseId = btn.dataset.markDone;
+    btn.disabled = true;
+    const payload = {
+      user_id: state.session.user.id,
+      exercise_id: exerciseId,
+      logged_at: todayISO(),
+      weight_kg: null,
+      reps: null,
+      sets: 1,
+    };
+    const { error } = await supabase.from('gym_exercise_logs').insert(payload);
+    if (error) {
+      btn.disabled = false;
+      alert('No se pudo guardar: ' + error.message);
+      return;
+    }
+    state.allExerciseLogs.push({ id: `local-${Date.now()}`, ...payload });
+    if (state.selectedExerciseId === exerciseId) {
+      state.exerciseLogs = [...state.exerciseLogs, { id: `local-${Date.now()}`, ...payload }];
+    }
     render();
   }));
 
@@ -1342,6 +1417,7 @@ function wireTabEvents() {
         if (error) throw error;
         await loadUserData();
         state.routineOverrides = {};
+        state.selectedRoutineDay = null;
         okEl.hidden = false;
         render();
       } catch (err) {
