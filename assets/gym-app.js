@@ -241,14 +241,36 @@ function mealFoodPlan(targets, template) {
 // Generador de rutina: reparte ejercicios del catálogo en un split semanal
 // según los días/semana y el objetivo del perfil.
 // ---------------------------------------------------------------------------
-// Cada día combina al menos 2 grupos musculares (nunca uno solo), para que
-// siempre haya catálogo suficiente con el que llegar a 6-8 ejercicios/día.
+// Cada día combina al menos 3 grupos musculares. Con solo 2 grupos/día
+// (diseño anterior) tocaba usar 4 ejercicios de cada grupo, y como algunos
+// grupos apenas tienen 3-5 ejercicios en el catálogo, eso obligaba a repetir
+// casi todo el catálogo cada día y dejaba muy poco margen para renovar la
+// rutina de una semana a la siguiente. Con 3-4 grupos/día basta con 2-3 de
+// cada uno, lo que dobla el margen de rotación semanal sin tocar el catálogo.
 const SPLITS = {
   2: [['pecho', 'espalda', 'piernas', 'core'], ['hombros', 'brazos', 'gluteos', 'cardio']],
-  3: [['pecho', 'hombros', 'brazos'], ['espalda', 'core'], ['piernas', 'gluteos', 'cardio']],
-  4: [['pecho', 'brazos'], ['espalda', 'core'], ['piernas', 'gluteos'], ['hombros', 'cardio']],
-  5: [['pecho', 'core'], ['espalda', 'cardio'], ['piernas', 'gluteos'], ['hombros', 'core'], ['brazos', 'cardio']],
-  6: [['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'gluteos'], ['pecho', 'hombros'], ['espalda', 'brazos'], ['piernas', 'cardio']],
+  3: [['pecho', 'hombros', 'brazos'], ['espalda', 'brazos', 'core'], ['piernas', 'gluteos', 'cardio']],
+  4: [
+    ['pecho', 'hombros', 'brazos'],
+    ['espalda', 'brazos', 'core'],
+    ['piernas', 'gluteos', 'core'],
+    ['hombros', 'cardio', 'core'],
+  ],
+  5: [
+    ['pecho', 'hombros', 'core'],
+    ['espalda', 'cardio', 'core'],
+    ['piernas', 'gluteos', 'cardio'],
+    ['hombros', 'brazos', 'core'],
+    ['espalda', 'brazos', 'cardio'],
+  ],
+  6: [
+    ['pecho', 'hombros', 'brazos'],
+    ['espalda', 'brazos', 'core'],
+    ['piernas', 'gluteos', 'cardio'],
+    ['pecho', 'hombros', 'core'],
+    ['espalda', 'brazos', 'cardio'],
+    ['piernas', 'gluteos', 'core'],
+  ],
 };
 
 // A qué día de la semana (0 = lunes ... 6 = domingo) corresponde cada día
@@ -266,6 +288,27 @@ const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'S�
 
 function todayWeekdayIndex() {
   return (new Date().getDay() + 6) % 7;
+}
+
+// Identificador de semana ISO (año*100 + nº de semana) para que la rutina
+// cambie sola cada semana sin que haga falta pulsar nada: todos los días de
+// una misma semana natural generan el mismo plan, y al empezar la semana
+// siguiente el número cambia y con él la selección de ejercicios.
+function isoWeekSeed(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // lunes = 0
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstThursdayDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + firstThursdayDayNum) / 7);
+  return d.getUTCFullYear() * 100 + week;
+}
+
+// state.routineSeed es un desplazamiento manual (botón "Generar otra
+// variante"); se suma a la semana actual para que ese botón también evite
+// repetir lo último generado, igual que el cambio automático semanal.
+function currentRoutineSeed() {
+  return isoWeekSeed() + state.routineSeed;
 }
 
 const GOAL_VOLUME = {
@@ -308,13 +351,34 @@ function exercisePoolForGroup(exercises, group, injuries) {
   return pool;
 }
 
+// Reordena "pool" empezando en un punto que depende de "seed" y dando la
+// vuelta en bucle (módulo el tamaño del catálogo), sin repetir ningún
+// elemento. El orden base de "pool" es fijo (no depende de la semana); lo
+// único que cambia con el seed es el punto de partida, desplazado
+// exactamente "step" posiciones respecto al seed anterior. Así, mientras
+// el catálogo tenga al menos 2×step ejercicios, esta semana y la anterior
+// no comparten ninguno de los primeros "step"; con catálogos más pequeños
+// el solape es el mínimo matemáticamente posible.
+function rotatePoolOrder(pool, seed, step) {
+  if (pool.length === 0) return [];
+  const offset = ((seed * step) % pool.length + pool.length) % pool.length;
+  return pool.map((_, idx) => pool[(offset + idx) % pool.length]);
+}
+
 function generateRoutine(profile, exercises, seed) {
   const days = SPLITS[profile.days_per_week] || SPLITS[3];
   const injuries = profile.injuries || [];
 
   return days.map((groups, i) => {
-    const groupPools = groups.map((group) => seededShuffle(exercisePoolForGroup(exercises, group, injuries), seed + i + group.length));
     const basePerGroup = Math.max(2, Math.floor(DAY_EXERCISE_TARGET / groups.length));
+    // Catálogo de cada grupo en un orden estable (no depende del seed),
+    // rotado para empezar en la ventana de esta semana: así el "hueco
+    // extra" de más abajo también sigue rotando en vez de repetir siempre
+    // los mismos ejercicios de relleno.
+    const groupPools = groups.map((group) => {
+      const stablePool = seededShuffle(exercisePoolForGroup(exercises, group, injuries), i + group.length);
+      return rotatePoolOrder(stablePool, seed, basePerGroup);
+    });
     const picked = groupPools.map((pool) => pool.slice(0, basePerGroup));
     let total = picked.reduce((sum, arr) => sum + arr.length, 0);
 
@@ -840,7 +904,7 @@ async function refreshAllExerciseLogs() {
 
 function viewRutina() {
   const p = state.profile;
-  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, state.routineSeed));
+  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, currentRoutineSeed()));
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
   const weekdays = ROUTINE_WEEKDAYS[p.days_per_week] || ROUTINE_WEEKDAYS[3];
@@ -865,6 +929,7 @@ function viewRutina() {
         <button class="btn-secondary" id="regen-routine">Generar otra variante</button>
       </div>
       <p>Pauta general: <strong>${vol.sets} series</strong> de <strong>${vol.reps} repeticiones</strong>, descanso de <strong>${vol.rest}</strong> entre series. Ajusta el peso para que las últimas 2 repeticiones cuesten de verdad sin perder la técnica.</p>
+      <p class="muted">Cada semana se renuevan los ejercicios automáticamente (el grupo muscular del día puede repetirse, pero se evitan en lo posible los mismos ejercicios de la semana pasada). "Generar otra variante" hace lo mismo al momento, dentro de esta semana.</p>
       <p class="muted">¿No tienes alguna de estas máquinas en tu gimnasio? Pulsa "Cambiar" para sustituirla por otra del mismo grupo muscular.</p>
       ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
 
@@ -1340,7 +1405,7 @@ function wireTabEvents() {
     const slotIndex = Number(btn.dataset.swapSlot);
     const current = state.exercises.find((e) => e.id === btn.dataset.swapExercise);
     if (!current) return;
-    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, state.routineSeed));
+    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, currentRoutineSeed()));
     const usedIdsThatDay = new Set(routine[dayIndex].exercises.map((e) => e.id));
     const groupExercises = state.exercises
       .filter((e) => e.muscle_group === current.muscle_group)
