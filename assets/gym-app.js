@@ -1214,6 +1214,10 @@ function viewExerciseDetail() {
 
   const logs = state.exerciseLogs;
   const isCardio = ex.muscle_group === 'cardio';
+  // Ejercicios (y estiramientos) que se hacen solo con el propio peso
+  // corporal: no tiene sentido pedir un peso añadido, solo repeticiones.
+  const tracksWeight = !isCardio && ex.logs_weight !== false;
+  const isBodyweight = !isCardio && !tracksWeight;
   const last30 = logs.filter((l) => (Date.now() - new Date(l.logged_at + 'T00:00:00')) / 86400000 <= 30);
 
   // Los ejercicios de cardio (cinta, bici...) no se miden en peso/reps sino
@@ -1229,9 +1233,14 @@ function viewExerciseDetail() {
     return Math.max(m, Number(l.weight_kg) * (1 + Number(l.reps) / 30));
   }, 0);
 
+  // Para ejercicios de solo peso corporal, el progreso se mide en
+  // repeticiones en vez de en kg.
+  const maxReps = logs.reduce((m, l) => (l.reps != null ? Math.max(m, Number(l.reps)) : m), 0);
+  const totalReps30 = last30.reduce((s, l) => s + (Number(l.reps) || 0) * (Number(l.sets) || 1), 0);
+
   const byDay = {};
   logs.forEach((l) => {
-    const value = isCardio ? l.speed_kmh : l.weight_kg;
+    const value = isCardio ? l.speed_kmh : isBodyweight ? l.reps : l.weight_kg;
     if (value == null) return;
     byDay[l.logged_at] = Math.max(byDay[l.logged_at] || 0, Number(value));
   });
@@ -1303,6 +1312,40 @@ function viewExerciseDetail() {
               <td>${new Date(l.logged_at + 'T00:00:00').toLocaleDateString('es-ES')}</td>
               <td>${l.speed_kmh != null ? fmt1(l.speed_kmh) + ' km/h' : '—'}</td>
               <td>${l.duration_min != null ? fmt0(l.duration_min) + ' min' : '—'}</td>
+              <td><button class="btn-ghost btn-sm" data-delete-log="${l.id}">Borrar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>` : ''}
+      ` : isBodyweight ? `
+      <div class="card-grid">
+        <div class="stat-card"><span class="stat-label">Repeticiones máximas</span><span class="stat-value">${maxReps || '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">Repeticiones (30 días)</span><span class="stat-value">${totalReps30 || '—'}</span></div>
+        <div class="stat-card"><span class="stat-label">Sesiones registradas</span><span class="stat-value">${logs.length || '—'}</span></div>
+      </div>
+      ${chartPoints.length >= 2 ? lineChart(chartPoints, { color: '#5b8def', unit: ' reps' }) : '<p class="chart-empty">Registra al menos 2 sesiones para ver tu evolución de repeticiones.</p>'}
+
+      <h3>Registrar serie de hoy</h3>
+      <p class="muted">Ejercicio con tu propio peso corporal: solo hace falta apuntar las repeticiones.</p>
+      <form id="log-form" class="measure-form">
+        <label>Fecha <input type="date" name="logged_at" value="${todayISO()}" max="${todayISO()}" required /></label>
+        <label>Repeticiones <input type="number" name="reps" min="0" max="199" /></label>
+        <label>Series <input type="number" name="sets" min="1" max="49" value="${defaultSets}" /></label>
+        <p class="field-error" id="log-error" hidden></p>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+
+      ${logs.length ? `
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Fecha</th><th>Reps</th><th>Series</th><th></th></tr></thead>
+        <tbody>
+          ${logs.slice().reverse().slice(0, 10).map((l) => `
+            <tr>
+              <td>${new Date(l.logged_at + 'T00:00:00').toLocaleDateString('es-ES')}</td>
+              <td>${l.reps ?? '—'}</td>
+              <td>${l.sets}</td>
               <td><button class="btn-ghost btn-sm" data-delete-log="${l.id}">Borrar</button></td>
             </tr>
           `).join('')}
