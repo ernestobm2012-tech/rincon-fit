@@ -183,6 +183,23 @@ const MEAL_TEMPLATES = [
   { label: 'Cena', pct: 0.25, protein: 'salmon', carb: 'patata', fat: null, extra: 'Verdura o ensalada, la cantidad que quieras' },
 ];
 
+// Suplementos habituales de gimnasio: información orientativa general, no
+// dosis personalizadas ni sustituto del consejo médico (ver aviso en la UI).
+const SUPPLEMENTS = [
+  { name: 'Proteína en polvo (whey o vegetal)', dose: '20-30 g por toma', note: 'Para completar tu objetivo diario de proteína cuando no llegas solo con comida.' },
+  { name: 'Creatina monohidrato', dose: '3-5 g al día, todos los días', note: 'Uno de los suplementos más estudiados: mejora el rendimiento en series de fuerza y ayuda a ganar masa magra.' },
+  { name: 'Magnesio', dose: '300-400 mg al día', note: 'Interviene en la función muscular y el descanso; útil si entrenas fuerte o sudas mucho.' },
+  { name: 'Omega-3 (aceite de pescado)', dose: '1-2 g de EPA+DHA al día', note: 'Apoya la salud cardiovascular y puede ayudar a reducir la inflamación tras entrenar.' },
+  { name: 'Vitamina D', dose: 'Según niveles (mejor con analítica)', note: 'Muy habitual tenerla baja con poca exposición al sol; interviene en huesos y sistema inmune.' },
+  { name: 'Cafeína', dose: '100-200 mg, 30-45 min antes de entrenar', note: 'Mejora el rendimiento y la sensación de energía durante el entrenamiento.' },
+];
+
+const SUPPLEMENT_GOAL_NOTES = {
+  perdida_peso: 'En déficit calórico la prioridad es la proteína, para no perder masa muscular junto con la grasa; la cafeína puede ayudarte a rendir mejor cuando hay menos energía disponible.',
+  definicion: 'Con proteína alta y algo de déficit, la creatina ayuda a mantener el rendimiento en el gimnasio mientras defines.',
+  volumen: 'Para ganar masa, la creatina es de los suplementos con más respaldo, junto con cubrir bien la proteína diaria.',
+};
+
 function roundGrams(g) {
   return Math.max(5, Math.round(g / 5) * 5);
 }
@@ -1134,6 +1151,20 @@ function viewDieta() {
         `;
       }).join('')}
       <p class="muted">Este cálculo es orientativo (usa valores nutricionales medios) y no sustituye a un/a nutricionista si tienes alguna condición médica. Puedes sustituir cualquier alimento por otro de su misma categoría (proteína/carbohidrato/grasa) con un peso similar.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Suplementos recomendados</h2>
+      <p class="muted">${SUPPLEMENT_GOAL_NOTES[p.goal]}</p>
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Suplemento</th><th>Dosis orientativa</th><th>Para qué</th></tr></thead>
+        <tbody>
+          ${SUPPLEMENTS.map((s) => `<tr><td>${s.name}</td><td>${s.dose}</td><td>${s.note}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+      <p class="muted">Son recomendaciones generales, no sustituyen el consejo de un médico o nutricionista, sobre todo si tomas medicación, estás embarazada o en periodo de lactancia, o tienes alguna condición renal, hepática o cardiaca (la creatina y otros suplementos no son adecuados en esos casos). Los suplementos complementan una dieta ya cuidada, nunca la sustituyen.</p>
     </section>
   `;
 }
