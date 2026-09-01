@@ -23,6 +23,7 @@ const state = {
   calendarMonth: (() => { const d = new Date(); d.setDate(1); return d; })(),
   selectedCalendarDate: todayISO(),
   selectedRoutineDay: null,
+  stretchSectionOpen: false,
 };
 
 const GOAL_LABELS = {
@@ -50,7 +51,10 @@ const ACTIVITY_FACTORS = {
 const MUSCLE_LABELS = {
   pecho: 'Pecho', espalda: 'Espalda', piernas: 'Piernas', gluteos: 'Glúteos',
   hombros: 'Hombros', brazos: 'Brazos', core: 'Core / abdomen', cardio: 'Cardio',
+  estiramiento: 'Estiramiento',
 };
+
+const STRETCH_TIMING_LABELS = { antes: 'Antes de entrenar', despues: 'Después de entrenar', ambos: 'Antes o después' };
 
 const INJURY_LABELS = {
   hombro: 'Hombro', espalda_baja: 'Espalda baja', rodilla: 'Rodilla',
@@ -569,6 +573,7 @@ const MOVEMENT_DEFS = {
   raise: { label: 'Elevación', svg: () => raiseSVG('anim-raise') },
   core: { label: 'Tensión de core', svg: () => coreSVG('anim-core') },
   cardio: { label: 'Movimiento continuo', svg: () => cardioSVG() },
+  stretch: { label: 'Estiramiento sostenido', svg: () => raiseSVG('anim-core') },
 };
 function movementAnimation(type) {
   const def = MOVEMENT_DEFS[type] || MOVEMENT_DEFS.push;
@@ -601,6 +606,26 @@ function exerciseThumb(ex) {
     return `<img src="./assets/exercise-photos/${ex.photo_ref}/0.jpg" alt="${ex.name}" class="exercise-thumb-img" loading="lazy" />`;
   }
   return `<span class="exercise-thumb-fallback" aria-hidden="true">${(MOVEMENT_DEFS[ex.movement_type] || MOVEMENT_DEFS.push).svg()}</span>`;
+}
+
+// Fila compacta para los estiramientos opcionales: foto + nombre + marcar
+// hecho, sin series/reps ni diagrama muscular (todos comparten el mismo
+// grupo "estiramiento", así que no aportaría información).
+function stretchRowHTML(ex) {
+  const done = isDoneToday(ex.id);
+  return `
+    <div class="exercise-row exercise-row-compact">
+      <button class="exercise-row-thumb" data-open-exercise="${ex.id}" aria-label="Ver detalle de ${ex.name}">
+        ${exerciseThumb(ex)}
+      </button>
+      <div class="exercise-row-main">
+        <button class="exercise-link exercise-row-name" data-open-exercise="${ex.id}">${ex.name}</button>
+        <div class="exercise-row-actions">
+          ${done ? '<span class="badge good">✓ Hecho</span>' : `<button class="btn-ghost btn-sm" data-mark-done="${ex.id}">✓ Hecho</button>`}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 const DIFFICULTY_LEVEL = { principiante: 2, intermedio: 3, avanzado: 4 };
@@ -945,13 +970,18 @@ function viewRutina() {
   const day = routine[dayIndex];
 
   const plannedIds = new Set(day.exercises.map((ex) => ex.id));
+  const stretchIds = new Set(state.exercises.filter((e) => e.muscle_group === 'estiramiento').map((e) => e.id));
   const today = todayISO();
-  const extraLogsToday = state.allExerciseLogs.filter((l) => l.logged_at === today && !plannedIds.has(l.exercise_id));
+  const extraLogsToday = state.allExerciseLogs.filter((l) => l.logged_at === today && !plannedIds.has(l.exercise_id) && !stretchIds.has(l.exercise_id));
   const extraExerciseIdsToday = [...new Set(extraLogsToday.map((l) => l.exercise_id))];
   const availableExtra = state.exercises
-    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id))
+    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id) && e.muscle_group !== 'estiramiento')
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+  const stretches = state.exercises.filter((e) => e.muscle_group === 'estiramiento');
+  const stretchesBefore = stretches.filter((e) => e.stretch_timing === 'antes' || e.stretch_timing === 'ambos');
+  const stretchesAfter = stretches.filter((e) => e.stretch_timing === 'despues' || e.stretch_timing === 'ambos');
 
   return `
     <section class="panel">
@@ -1005,6 +1035,22 @@ function viewRutina() {
           }).join('')}
         </div>`}
       </div>
+
+      ${stretches.length > 0 ? `
+      <div class="routine-day">
+        <details class="stretch-section" id="stretch-section" ${state.stretchSectionOpen ? 'open' : ''}>
+          <summary class="stretch-summary">🧘 Estiramientos <span class="muted">(opcional)</span></summary>
+          <p class="muted">No cuentan para tu rutina ni hace falta hacerlos: es solo una ayuda para calentar antes y soltar músculo después.</p>
+          ${stretchesBefore.length > 0 ? `
+            <h4>Antes de entrenar</h4>
+            <div class="exercise-row-list">${stretchesBefore.map(stretchRowHTML).join('')}</div>
+          ` : ''}
+          ${stretchesAfter.length > 0 ? `
+            <h4>Después de entrenar</h4>
+            <div class="exercise-row-list">${stretchesAfter.map(stretchRowHTML).join('')}</div>
+          ` : ''}
+        </details>
+      </div>` : ''}
 
       ${extraExerciseIdsToday.length > 0 ? `
       <div class="routine-day">
@@ -1485,6 +1531,14 @@ function wireTabEvents() {
     state.routineOverrides = {};
     state.selectedRoutineDay = null;
     render();
+  });
+
+  // Recuerda si el usuario tenía desplegados los estiramientos para que no
+  // se cierren solos cada vez que la pestaña Rutina se vuelve a renderizar
+  // (p. ej. al marcar uno como hecho).
+  const stretchSection = $('#stretch-section');
+  if (stretchSection) stretchSection.addEventListener('toggle', () => {
+    state.stretchSectionOpen = stretchSection.open;
   });
 
   $$('[data-swap-slot]').forEach((btn) => btn.addEventListener('click', () => {

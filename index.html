@@ -227,6 +227,18 @@
   .muscle-diagram-mini-svg { width: 38px; height: auto; }
   .muscle-diagram-mini span { display: block; margin-top: 2px; line-height: 1.2; }
 
+  .exercise-row-compact .exercise-row-thumb { width: 48px; height: 48px; }
+
+  .stretch-section summary { list-style: none; cursor: pointer; }
+  .stretch-section summary::-webkit-details-marker { display: none; }
+  .stretch-summary {
+    font-family: inherit; font-weight: 700; font-size: 1.08em; color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stretch-summary::before { content: '▸'; color: var(--muted); font-size: 0.8em; transition: transform 0.15s ease; }
+  .stretch-section[open] .stretch-summary::before { transform: rotate(90deg); }
+  .stretch-section h4 { margin-top: 16px; }
+
   .measure-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 16px; }
 
   .extra-exercise-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
