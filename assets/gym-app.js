@@ -447,7 +447,7 @@ const ACTIVE_ZONES_BY_GROUP = {
 };
 const BACK_VIEW_GROUPS = new Set(['espalda', 'gluteos']);
 
-function bodyDiagram(muscleGroup) {
+function bodyDiagramSVG(muscleGroup, cssClass) {
   const active = ACTIVE_ZONES_BY_GROUP[muscleGroup] || [];
   const shapes = BODY_ZONE_ORDER.map((key) => {
     const z = BODY_ZONES[key];
@@ -457,11 +457,27 @@ function bodyDiagram(muscleGroup) {
       : `<rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="${z.rx}" fill="${fill}" />`;
   }).join('');
   const heart = muscleGroup === 'cardio' ? `<text x="80" y="86" font-size="24" text-anchor="middle">❤️</text>` : '';
+  return `<svg viewBox="0 0 160 280" class="${cssClass}" role="img" aria-label="Zona trabajada: ${MUSCLE_LABELS[muscleGroup]}">${shapes}${heart}</svg>`;
+}
+
+function bodyDiagram(muscleGroup) {
   const viewLabel = BACK_VIEW_GROUPS.has(muscleGroup) ? 'Vista trasera' : 'Vista frontal';
   return `
     <div class="muscle-diagram-wrap">
-      <svg viewBox="0 0 160 280" class="muscle-diagram" role="img" aria-label="Zona trabajada: ${MUSCLE_LABELS[muscleGroup]}">${shapes}${heart}</svg>
+      ${bodyDiagramSVG(muscleGroup, 'muscle-diagram')}
       <p class="muted" style="text-align:center;">${viewLabel} — ${MUSCLE_LABELS[muscleGroup]}</p>
+    </div>
+  `;
+}
+
+// Versión compacta del diagrama corporal para las filas de la rutina: solo
+// el silueta con la zona resaltada y el nombre del grupo, sin la etiqueta
+// de "vista frontal/trasera" (no cabe en una fila estrecha).
+function bodyDiagramMini(muscleGroup) {
+  return `
+    <div class="muscle-diagram-mini">
+      ${bodyDiagramSVG(muscleGroup, 'muscle-diagram-mini-svg')}
+      <span>${MUSCLE_LABELS[muscleGroup]}</span>
     </div>
   `;
 }
@@ -575,6 +591,16 @@ function exercisePhotoLoop(photoRef, name) {
       <img src="${base}1.jpg" alt="${name} — fotograma 2" class="photo-frame photo-frame-b" loading="lazy" />
     </div>
   `;
+}
+
+// Miniatura cuadrada para las filas de la rutina: una sola foto fija (no en
+// bucle, para no distraer en una lista) o, si el ejercicio no tiene foto, el
+// icono del patrón de movimiento como respaldo.
+function exerciseThumb(ex) {
+  if (ex.photo_ref) {
+    return `<img src="./assets/exercise-photos/${ex.photo_ref}/0.jpg" alt="${ex.name}" class="exercise-thumb-img" loading="lazy" />`;
+  }
+  return `<span class="exercise-thumb-fallback" aria-hidden="true">${(MOVEMENT_DEFS[ex.movement_type] || MOVEMENT_DEFS.push).svg()}</span>`;
 }
 
 const DIFFICULTY_LEVEL = { principiante: 2, intermedio: 3, avanzado: 4 };
@@ -951,32 +977,33 @@ function viewRutina() {
         <h3>${day.label}</h3>
         ${day.exercises.length === 0 ? '<p class="chart-empty">No hay ejercicios suficientes en el catálogo para este grupo.</p>' : `
         ${day.exercises.length < 6 && injuries.length > 0 ? '<p class="muted">Hoy salen menos ejercicios de lo habitual: hay pocas alternativas seguras para tu lesión en este grupo muscular.</p>' : ''}
-        <table class="routine-table">
-          <thead><tr><th>Ejercicio</th><th>Máquina / equipo</th><th>Series x reps</th><th></th></tr></thead>
-          <tbody>
-            ${day.exercises.map((ex, slotIndex) => {
-              const done = isDoneToday(ex.id);
-              return `
-                <tr>
-                  <td>
-                    <button class="exercise-link" data-open-exercise="${ex.id}">${ex.name}</button>
+        <div class="exercise-row-list">
+          ${day.exercises.map((ex, slotIndex) => {
+            const done = isDoneToday(ex.id);
+            return `
+              <div class="exercise-row">
+                <button class="exercise-row-thumb" data-open-exercise="${ex.id}" aria-label="Ver detalle de ${ex.name}">
+                  ${exerciseThumb(ex)}
+                </button>
+                <div class="exercise-row-main">
+                  <button class="exercise-link exercise-row-name" data-open-exercise="${ex.id}">${ex.name}</button>
+                  <div class="exercise-row-meta">
                     ${levelBars(ex.difficulty)}
-                    ${!isSafeForInjuries(ex, injuries) ? '<span class="badge warn">⚠️ revisa tu lesión</span>' : ''}
-                    <p class="muted">${ex.instructions}</p>
-                  </td>
-                  <td>${ex.machine}</td>
-                  <td>${ex.muscle_group === 'cardio' ? 'Velocidad y tiempo' : `${vol.sets} x ${vol.reps}`}</td>
-                  <td>
+                    <span>${ex.muscle_group === 'cardio' ? 'Velocidad y tiempo' : `${vol.sets} x ${vol.reps}`}</span>
+                  </div>
+                  ${!isSafeForInjuries(ex, injuries) ? '<span class="badge warn">⚠️ revisa tu lesión</span>' : ''}
+                  <div class="exercise-row-actions">
                     <button class="btn-ghost btn-sm" data-swap-day="${dayIndex}" data-swap-slot="${slotIndex}" data-swap-exercise="${ex.id}">🔁 Cambiar</button>
                     ${done
                       ? '<span class="badge good">✓ Hecho hoy</span>'
                       : `<button class="btn-ghost btn-sm" data-mark-done="${ex.id}">✓ Hecho hoy</button>`}
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>`}
+                  </div>
+                </div>
+                ${bodyDiagramMini(ex.muscle_group)}
+              </div>
+            `;
+          }).join('')}
+        </div>`}
       </div>
 
       ${extraExerciseIdsToday.length > 0 ? `
