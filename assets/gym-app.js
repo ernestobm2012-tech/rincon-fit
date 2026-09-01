@@ -789,7 +789,6 @@ function renderApp() {
   root.innerHTML = `
     <header class="app-header">
       <div class="brand"><span class="brand-mark" aria-hidden="true">🏋️</span> Rincón Fit</div>
-      <button class="icon-btn" id="logout-btn" title="Salir" aria-label="Salir">⏻</button>
     </header>
     <nav class="bottom-nav" aria-label="Navegación principal">
       ${NAV_TABS.map((t) => `
@@ -805,10 +804,6 @@ function renderApp() {
     if (btn.dataset.tab === state.tab) return;
     goToTab(btn.dataset.tab);
   }));
-  $('#logout-btn').addEventListener('click', async () => {
-    await supabase.auth.signOut();
-  });
-
   const main = $('#app-main');
   if (state.tab === 'resumen') main.innerHTML = viewResumen();
   else if (state.tab === 'rutina') main.innerHTML = viewRutina();
@@ -1410,6 +1405,11 @@ function viewPerfil() {
         <button type="submit" class="btn-primary">Guardar cambios</button>
       </form>
     </section>
+    <section class="panel">
+      <h2>Cuenta</h2>
+      <p class="muted">Sesión iniciada${p.full_name ? ` como ${p.full_name}` : ''}.</p>
+      <button class="btn-secondary" id="logout-btn">Cerrar sesión</button>
+    </section>
     <section class="panel danger-zone">
       <h2>Zona de riesgo</h2>
       <p class="muted">Borra todas tus mediciones y tu perfil de esta app. Tu cuenta de acceso seguirá existiendo, pero podrás volver a rellenar el cuestionario inicial.</p>
@@ -1648,6 +1648,11 @@ function wireTabEvents() {
       }
     });
   }
+
+  const logoutBtn = $('#logout-btn');
+  if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+    await supabase.auth.signOut();
+  });
 
   const deleteBtn = $('#delete-data-btn');
   if (deleteBtn) deleteBtn.addEventListener('click', async () => {
