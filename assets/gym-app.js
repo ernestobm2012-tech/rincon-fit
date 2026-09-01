@@ -782,18 +782,23 @@ function latestMeasurement() {
   return state.measurements[state.measurements.length - 1] || null;
 }
 
+const NAV_TABS = ['resumen', 'rutina', 'dieta', 'medidas', 'calendario', 'perfil'];
+
 function renderApp() {
   const p = state.profile;
   root.innerHTML = `
     <header class="app-header">
-      <div class="brand">Rincón Fit</div>
-      <nav class="tabs">
-        ${['resumen', 'rutina', 'dieta', 'medidas', 'calendario', 'perfil'].map((t) => `
-          <button class="tab ${state.tab === t ? 'active' : ''}" data-tab="${t}">${tabLabel(t)}</button>
-        `).join('')}
-      </nav>
-      <button class="btn-ghost" id="logout-btn">Salir</button>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">🏋️</span> Rincón Fit</div>
+      <button class="icon-btn" id="logout-btn" title="Salir" aria-label="Salir">⏻</button>
     </header>
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      ${NAV_TABS.map((t) => `
+        <button class="tab ${state.tab === t ? 'active' : ''}" data-tab="${t}">
+          <span class="tab-icon" aria-hidden="true">${tabIcon(t)}</span>
+          <span class="tab-label">${tabLabel(t)}</span>
+        </button>
+      `).join('')}
+    </nav>
     <main class="app-main" id="app-main"></main>
   `;
   $$('.tab').forEach((btn) => btn.addEventListener('click', () => {
@@ -818,6 +823,10 @@ function renderApp() {
 
 function tabLabel(t) {
   return { resumen: 'Resumen', rutina: 'Rutina', dieta: 'Dieta', medidas: 'Medidas', calendario: 'Calendario', perfil: 'Perfil' }[t];
+}
+
+function tabIcon(t) {
+  return { resumen: '🏠', rutina: '🏋️', dieta: '🥗', medidas: '📏', calendario: '📅', perfil: '👤' }[t];
 }
 
 function viewResumen() {
