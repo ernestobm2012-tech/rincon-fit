@@ -27,6 +27,9 @@ Vercel...).
   Se renueva sola cada semana natural evitando repetir los ejercicios de la
   semana anterior en la medida que el catálogo lo permite, y también se
   puede regenerar a mano para tener variedad al momento.
+- **Estiramientos opcionales** (10 más, antes y/o después de entrenar) en
+  una sección aparte y plegada por defecto: no cuentan para la rutina ni
+  son obligatorios, solo una ayuda para calentar y soltar músculo.
 - **Dieta orientativa**: calorías y macros calculados con la fórmula de
   Mifflin-St Jeor (específica por sexo), ajustados al objetivo (déficit,
   déficit ligero o superávit), con reparto sugerido por comidas.
