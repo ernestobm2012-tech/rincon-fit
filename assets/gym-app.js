@@ -24,6 +24,7 @@ const state = {
   selectedCalendarDate: todayISO(),
   selectedRoutineDay: null,
   stretchSectionOpen: false,
+  editingWeekdayPlan: false,
 };
 
 const GOAL_LABELS = {
@@ -309,6 +310,34 @@ const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'S�
 
 function todayWeekdayIndex() {
   return (new Date().getDay() + 6) % 7;
+}
+
+// Qué día de la rutina (0-based) toca cada día de la semana. Por defecto usa
+// ROUTINE_WEEKDAYS según los días/semana del perfil, pero el usuario puede
+// personalizarlo desde "Rutina" (añadir un día suelto, moverlo de sitio,
+// entrenar más o menos días una semana concreta) sin tocar su configuración
+// habitual de días/semana en Perfil. Se guarda en gym_profiles.weekday_plan
+// como un array de 7 posiciones (lunes..domingo) con el índice del día de
+// rutina que toca ese día, o null si es descanso.
+function weekdayPlanFor(profile) {
+  const n = (SPLITS[profile.days_per_week] || SPLITS[3]).length;
+  const stored = profile.weekday_plan;
+  if (Array.isArray(stored) && stored.length === 7) {
+    return stored.map((v) => (Number.isInteger(v) && v >= 0 && v < n) ? v : null);
+  }
+  const defaultWeekdays = ROUTINE_WEEKDAYS[profile.days_per_week] || ROUTINE_WEEKDAYS[3];
+  const plan = Array(7).fill(null);
+  defaultWeekdays.forEach((wd, i) => { plan[wd] = i; });
+  return plan;
+}
+
+// Inverso de weekdayPlanFor: para cada día de rutina (0..n-1), qué días de la
+// semana lo tienen asignado (puede ser ninguno, uno, o varios si el usuario
+// repite un día de rutina en más de un día de la semana).
+function weekdaysByRoutineDay(plan, n) {
+  const map = Array.from({ length: n }, () => []);
+  plan.forEach((dayIndex, wd) => { if (dayIndex !== null) map[dayIndex].push(wd); });
+  return map;
 }
 
 // Identificador de semana ISO (año*100 + nº de semana) para que la rutina
@@ -980,10 +1009,11 @@ function viewRutina() {
   const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, currentRoutineSeed()));
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
-  const weekdays = ROUTINE_WEEKDAYS[p.days_per_week] || ROUTINE_WEEKDAYS[3];
+  const weekdayPlan = weekdayPlanFor(p);
+  const weekdaysForRoutineDay = weekdaysByRoutineDay(weekdayPlan, routine.length);
   const todayWd = todayWeekdayIndex();
-  const todayRoutineIndex = weekdays.indexOf(todayWd);
-  const dayIndex = state.selectedRoutineDay !== null ? state.selectedRoutineDay : (todayRoutineIndex !== -1 ? todayRoutineIndex : 0);
+  const todayRoutineIndex = weekdayPlan[todayWd];
+  const dayIndex = state.selectedRoutineDay !== null ? state.selectedRoutineDay : (todayRoutineIndex !== null ? todayRoutineIndex : 0);
   const day = routine[dayIndex];
 
   const plannedIds = new Set(day.exercises.map((ex) => ex.id));
@@ -1013,12 +1043,35 @@ function viewRutina() {
 
       <div class="routine-day-tabs">
         ${routine.map((d, i) => {
-          const wd = weekdays[i];
+          const wds = weekdaysForRoutineDay[i];
           const isToday = i === todayRoutineIndex;
-          return `<button class="day-pill ${i === dayIndex ? 'active' : ''}" data-routine-day="${i}">${wd !== undefined ? WEEKDAY_NAMES[wd] : `Día ${i + 1}`}${isToday ? ' · hoy' : ''}</button>`;
+          const label = wds.length ? wds.map((wd) => WEEKDAY_NAMES[wd]).join(' y ') : `Día ${i + 1} (sin día fijo)`;
+          return `<button class="day-pill ${i === dayIndex ? 'active' : ''}" data-routine-day="${i}">${label}${isToday ? ' · hoy' : ''}</button>`;
         }).join('')}
       </div>
-      ${todayRoutineIndex === -1 ? '<p class="muted">Hoy no tienes entrenamiento asignado en tu rutina (día de descanso). Puedes consultar cualquier otro día arriba.</p>' : ''}
+      ${todayRoutineIndex === null ? '<p class="muted">Hoy no tienes entrenamiento asignado en tu rutina (día de descanso). Puedes consultar cualquier otro día arriba, o "Editar mis días" si has venido igualmente.</p>' : ''}
+
+      <div class="weekday-plan-toggle">
+        <button type="button" class="btn-ghost btn-sm" id="toggle-weekday-plan">${state.editingWeekdayPlan ? 'Cancelar' : '✏️ Editar mis días de esta semana'}</button>
+      </div>
+      ${state.editingWeekdayPlan ? `
+      <form id="weekday-plan-form" class="weekday-plan-form">
+        <p class="muted">Elige qué entrenamiento (o descanso) toca cada día de la semana. Puedes añadir un día suelto repitiendo uno ya existente, cambiar uno de sitio (p. ej. mover el jueves al miércoles), o marcar más o menos días de los habituales. Esto no cambia tu configuración de días/semana en Perfil, solo el reparto de esta rutina.</p>
+        ${WEEKDAY_NAMES.map((name, wd) => `
+          <label class="weekday-plan-row">
+            <span>${name}</span>
+            <select name="wd-${wd}">
+              <option value="" ${weekdayPlan[wd] === null ? 'selected' : ''}>Descanso</option>
+              ${routine.map((d, i) => `<option value="${i}" ${weekdayPlan[wd] === i ? 'selected' : ''}>${d.label}</option>`).join('')}
+            </select>
+          </label>
+        `).join('')}
+        <div class="weekday-plan-actions">
+          <button type="submit" class="btn-primary">Guardar días</button>
+          <button type="button" class="btn-secondary" id="reset-weekday-plan">Restablecer automático</button>
+        </div>
+      </form>
+      ` : ''}
 
       <div class="routine-day">
         <h3>${day.label}</h3>
@@ -1613,6 +1666,36 @@ function wireTabEvents() {
   const stretchSection = $('#stretch-section');
   if (stretchSection) stretchSection.addEventListener('toggle', () => {
     state.stretchSectionOpen = stretchSection.open;
+  });
+
+  const toggleWeekdayPlanBtn = $('#toggle-weekday-plan');
+  if (toggleWeekdayPlanBtn) toggleWeekdayPlanBtn.addEventListener('click', () => {
+    state.editingWeekdayPlan = !state.editingWeekdayPlan;
+    render();
+  });
+
+  const weekdayPlanForm = $('#weekday-plan-form');
+  if (weekdayPlanForm) weekdayPlanForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const plan = WEEKDAY_NAMES.map((_, wd) => {
+      const v = fd.get(`wd-${wd}`);
+      return v === '' ? null : Number(v);
+    });
+    await supabase.from('gym_profiles').update({ weekday_plan: plan }).eq('id', state.session.user.id);
+    state.profile.weekday_plan = plan;
+    state.editingWeekdayPlan = false;
+    state.selectedRoutineDay = null;
+    render();
+  });
+
+  const resetWeekdayPlanBtn = $('#reset-weekday-plan');
+  if (resetWeekdayPlanBtn) resetWeekdayPlanBtn.addEventListener('click', async () => {
+    await supabase.from('gym_profiles').update({ weekday_plan: null }).eq('id', state.session.user.id);
+    state.profile.weekday_plan = null;
+    state.editingWeekdayPlan = false;
+    state.selectedRoutineDay = null;
+    render();
   });
 
   $$('[data-swap-slot]').forEach((btn) => btn.addEventListener('click', () => {
