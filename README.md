@@ -29,9 +29,10 @@ Vercel...).
   puede regenerar a mano para tener variedad al momento.
 - **Días de entreno editables**: qué día de la semana corresponde a cada
   entrenamiento se puede personalizar desde "Editar mis días" en Rutina —
-  añadir un día suelto repitiendo uno ya existente, mover uno de sitio (p.
-  ej. cambiar el jueves por el miércoles) o entrenar más o menos días de
-  los habituales una semana concreta, sin tocar los días/semana de Perfil.
+  repetir uno ya existente, añadir un "Día nuevo" con ejercicios propios,
+  mover uno de sitio (p. ej. cambiar el jueves por el miércoles) o entrenar
+  más o menos días de los habituales una semana concreta, sin tocar los
+  días/semana de Perfil.
 - **Estiramientos opcionales** (10 más, antes y/o después de entrenar) en
   una sección aparte y plegada por defecto: no cuentan para la rutina ni
   son obligatorios, solo una ayuda para calentar y soltar músculo.

@@ -308,6 +308,24 @@ const ROUTINE_WEEKDAYS = {
 };
 const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+// Combinaciones de grupos musculares para "días nuevos" que el usuario añade
+// a mano por encima de sus días/semana habituales (no vienen de SPLITS, que
+// está pensado para un número fijo de días). Rotan en bucle si se añaden
+// muchos días nuevos.
+const EXTRA_DAY_SPLITS = [
+  ['pecho', 'espalda', 'piernas'],
+  ['hombros', 'brazos', 'core'],
+  ['gluteos', 'cardio', 'core'],
+  ['pecho', 'hombros', 'piernas'],
+  ['espalda', 'brazos', 'cardio'],
+  ['gluteos', 'core', 'hombros'],
+];
+
+// Como mucho un día de rutina distinto por cada día de la semana (7, 0-based
+// hasta 6): no tiene sentido guardar más variantes de las que caben en una
+// semana.
+const MAX_ROUTINE_DAY_INDEX = 6;
+
 function todayWeekdayIndex() {
   return (new Date().getDay() + 6) % 7;
 }
@@ -318,17 +336,24 @@ function todayWeekdayIndex() {
 // entrenar más o menos días una semana concreta) sin tocar su configuración
 // habitual de días/semana en Perfil. Se guarda en gym_profiles.weekday_plan
 // como un array de 7 posiciones (lunes..domingo) con el índice del día de
-// rutina que toca ese día, o null si es descanso.
+// rutina que toca ese día, o null si es descanso. Los índices >= días/semana
+// del perfil son "días nuevos" generados aparte (ver EXTRA_DAY_SPLITS).
 function weekdayPlanFor(profile) {
-  const n = (SPLITS[profile.days_per_week] || SPLITS[3]).length;
   const stored = profile.weekday_plan;
   if (Array.isArray(stored) && stored.length === 7) {
-    return stored.map((v) => (Number.isInteger(v) && v >= 0 && v < n) ? v : null);
+    return stored.map((v) => (Number.isInteger(v) && v >= 0 && v <= MAX_ROUTINE_DAY_INDEX) ? v : null);
   }
   const defaultWeekdays = ROUTINE_WEEKDAYS[profile.days_per_week] || ROUTINE_WEEKDAYS[3];
   const plan = Array(7).fill(null);
   defaultWeekdays.forEach((wd, i) => { plan[wd] = i; });
   return plan;
+}
+
+// Cuántos "días nuevos" (por encima de los días/semana habituales) hacen
+// falta para cubrir el índice más alto que aparezca en el plan.
+function extraDaysCountFor(plan, baseCount) {
+  const maxIndex = plan.reduce((max, v) => (v !== null && v > max ? v : max), baseCount - 1);
+  return Math.max(0, maxIndex - baseCount + 1);
 }
 
 // Inverso de weekdayPlanFor: para cada día de rutina (0..n-1), qué días de la
@@ -440,8 +465,10 @@ function groupCountsForDay(poolLengths) {
   return counts;
 }
 
-function generateRoutine(profile, exercises, seed) {
-  const days = SPLITS[profile.days_per_week] || SPLITS[3];
+function generateRoutine(profile, exercises, seed, extraDaysCount = 0) {
+  const baseDays = SPLITS[profile.days_per_week] || SPLITS[3];
+  const extraDays = Array.from({ length: extraDaysCount }, (_, i) => EXTRA_DAY_SPLITS[i % EXTRA_DAY_SPLITS.length]);
+  const days = baseDays.concat(extraDays);
   const injuries = profile.injuries || [];
 
   return days.map((groups, i) => {
@@ -1006,10 +1033,12 @@ async function refreshAllExerciseLogs() {
 
 function viewRutina() {
   const p = state.profile;
-  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, currentRoutineSeed()));
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
   const weekdayPlan = weekdayPlanFor(p);
+  const baseDaysCount = (SPLITS[p.days_per_week] || SPLITS[3]).length;
+  const extraDaysCount = extraDaysCountFor(weekdayPlan, baseDaysCount);
+  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, currentRoutineSeed(), extraDaysCount));
   const weekdaysForRoutineDay = weekdaysByRoutineDay(weekdayPlan, routine.length);
   const todayWd = todayWeekdayIndex();
   const todayRoutineIndex = weekdayPlan[todayWd];
@@ -1056,13 +1085,14 @@ function viewRutina() {
       </div>
       ${state.editingWeekdayPlan ? `
       <form id="weekday-plan-form" class="weekday-plan-form">
-        <p class="muted">Elige qué entrenamiento (o descanso) toca cada día de la semana. Puedes añadir un día suelto repitiendo uno ya existente, cambiar uno de sitio (p. ej. mover el jueves al miércoles), o marcar más o menos días de los habituales. Esto no cambia tu configuración de días/semana en Perfil, solo el reparto de esta rutina.</p>
+        <p class="muted">Elige qué entrenamiento (o descanso) toca cada día de la semana. Puedes repetir uno ya existente, añadir un "Día nuevo" con ejercicios distintos, cambiar uno de sitio (p. ej. mover el jueves al miércoles), o marcar más o menos días de los habituales. Esto no cambia tu configuración de días/semana en Perfil, solo el reparto de esta rutina.</p>
         ${WEEKDAY_NAMES.map((name, wd) => `
           <label class="weekday-plan-row">
             <span>${name}</span>
             <select name="wd-${wd}">
               <option value="" ${weekdayPlan[wd] === null ? 'selected' : ''}>Descanso</option>
               ${routine.map((d, i) => `<option value="${i}" ${weekdayPlan[wd] === i ? 'selected' : ''}>${d.label}</option>`).join('')}
+              <option value="new">➕ Día nuevo (genera ejercicios distintos)</option>
             </select>
           </label>
         `).join('')}
@@ -1678,9 +1708,18 @@ function wireTabEvents() {
   if (weekdayPlanForm) weekdayPlanForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const plan = WEEKDAY_NAMES.map((_, wd) => {
-      const v = fd.get(`wd-${wd}`);
-      return v === '' ? null : Number(v);
+    const raw = WEEKDAY_NAMES.map((_, wd) => fd.get(`wd-${wd}`));
+    const baseDaysCount = (SPLITS[state.profile.days_per_week] || SPLITS[3]).length;
+    const maxExplicit = raw.reduce((max, v) => (v !== '' && v !== 'new' && Number(v) > max ? Number(v) : max), baseDaysCount - 1);
+    let nextNewIndex = maxExplicit + 1;
+    if (raw.includes('new') && nextNewIndex + raw.filter((v) => v === 'new').length - 1 > MAX_ROUTINE_DAY_INDEX) {
+      alert('No caben más días nuevos: como mucho un entrenamiento distinto por cada día de la semana.');
+      return;
+    }
+    const plan = raw.map((v) => {
+      if (v === '') return null;
+      if (v === 'new') { const idx = nextNewIndex; nextNewIndex += 1; return idx; }
+      return Number(v);
     });
     await supabase.from('gym_profiles').update({ weekday_plan: plan }).eq('id', state.session.user.id);
     state.profile.weekday_plan = plan;
@@ -1703,7 +1742,9 @@ function wireTabEvents() {
     const slotIndex = Number(btn.dataset.swapSlot);
     const current = state.exercises.find((e) => e.id === btn.dataset.swapExercise);
     if (!current) return;
-    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, currentRoutineSeed()));
+    const baseDaysCount = (SPLITS[state.profile.days_per_week] || SPLITS[3]).length;
+    const extraDaysCount = extraDaysCountFor(weekdayPlanFor(state.profile), baseDaysCount);
+    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, currentRoutineSeed(), extraDaysCount));
     const usedIdsThatDay = new Set(routine[dayIndex].exercises.map((e) => e.id));
     const groupExercises = state.exercises
       .filter((e) => e.muscle_group === current.muscle_group)
