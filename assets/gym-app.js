@@ -771,6 +771,9 @@ function renderAuth() {
         <label>Contraseña
           <input type="password" name="password" required minlength="6" autocomplete="current-password" />
         </label>
+        <label id="auth-password2-field" hidden>Repite la contraseña
+          <input type="password" name="password2" minlength="6" autocomplete="new-password" />
+        </label>
         <p class="field-error" id="auth-error" hidden></p>
         <button type="submit" class="btn-primary" id="auth-submit">Entrar</button>
       </form>
@@ -782,6 +785,9 @@ function renderAuth() {
     $$('.tab-mini').forEach((b) => b.classList.toggle('active', b === btn));
     $('#auth-submit').textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta';
     $('#auth-form input[name=password]').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+    const password2Field = $('#auth-password2-field');
+    password2Field.hidden = mode !== 'signup';
+    password2Field.querySelector('input').required = mode === 'signup';
   }));
 
   $('#auth-form').addEventListener('submit', async (e) => {
@@ -791,6 +797,13 @@ function renderAuth() {
     const password = fd.get('password').toString();
     const errorEl = $('#auth-error');
     errorEl.hidden = true;
+    if (mode === 'signup' && password !== fd.get('password2').toString()) {
+      errorEl.hidden = false;
+      errorEl.classList.add('field-error');
+      errorEl.classList.remove('field-ok');
+      errorEl.textContent = 'Las contraseñas no coinciden.';
+      return;
+    }
     $('#auth-submit').disabled = true;
     try {
       const { error } = mode === 'login'
