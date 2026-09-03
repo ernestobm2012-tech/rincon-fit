@@ -4,6 +4,14 @@ const SUPABASE_URL = 'https://ztsdkfwnqrlmsirfvoat.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0c2RrZnducXJsbXNpcmZ2b2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwOTM5OTksImV4cCI6MjA5ODY2OTk5OX0.ODimfaCqTpK8fkY4Oobk8kSR3rppb_afmoTTXG8H2os';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Panel de administración: solo visible/operativo para el propietario de la
+// app (comprobado también en el servidor, en la función gym_admin_stats, así
+// que ocultarlo aquí es solo para no confundir a otros usuarios).
+const ADMIN_EMAIL = 'ernestobm2012@gmail.com';
+function isAdmin() {
+  return !!(state.session && state.session.user && state.session.user.email === ADMIN_EMAIL);
+}
+
 // ---------------------------------------------------------------------------
 // Estado en memoria de la sesión actual
 // ---------------------------------------------------------------------------
@@ -25,6 +33,9 @@ const state = {
   selectedRoutineDay: null,
   stretchSectionOpen: false,
   editingWeekdayPlan: false,
+  adminStats: null,
+  adminLoading: false,
+  adminError: null,
 };
 
 const GOAL_LABELS = {
@@ -923,12 +934,13 @@ const NAV_TABS = ['resumen', 'rutina', 'dieta', 'medidas', 'calendario', 'perfil
 
 function renderApp() {
   const p = state.profile;
+  const tabs = isAdmin() ? NAV_TABS.concat('admin') : NAV_TABS;
   root.innerHTML = `
     <header class="app-header">
       <div class="brand"><span class="brand-mark" aria-hidden="true">🏋️</span> Rincón Fit</div>
     </header>
     <nav class="bottom-nav" aria-label="Navegación principal">
-      ${NAV_TABS.map((t) => `
+      ${tabs.map((t) => `
         <button class="tab ${state.tab === t ? 'active' : ''}" data-tab="${t}">
           <span class="tab-icon" aria-hidden="true">${tabIcon(t)}</span>
           <span class="tab-label">${tabLabel(t)}</span>
@@ -949,16 +961,88 @@ function renderApp() {
   else if (state.tab === 'perfil') main.innerHTML = viewPerfil();
   else if (state.tab === 'ejercicio') main.innerHTML = viewExerciseDetail();
   else if (state.tab === 'calendario') main.innerHTML = viewCalendario();
+  else if (state.tab === 'admin') main.innerHTML = viewAdmin();
 
   wireTabEvents();
 }
 
 function tabLabel(t) {
-  return { resumen: 'Resumen', rutina: 'Rutina', dieta: 'Dieta', medidas: 'Medidas', calendario: 'Calendario', perfil: 'Perfil' }[t];
+  return { resumen: 'Resumen', rutina: 'Rutina', dieta: 'Dieta', medidas: 'Medidas', calendario: 'Calendario', perfil: 'Perfil', admin: 'Admin' }[t];
 }
 
 function tabIcon(t) {
-  return { resumen: '🏠', rutina: '🏋️', dieta: '🥗', medidas: '📏', calendario: '📅', perfil: '👤' }[t];
+  return { resumen: '🏠', rutina: '🏋️', dieta: '🥗', medidas: '📏', calendario: '📅', perfil: '👤', admin: '📊' }[t];
+}
+
+function viewAdmin() {
+  if (!isAdmin()) {
+    return `<section class="panel"><p class="muted">No tienes acceso a esta sección.</p></section>`;
+  }
+  if (state.adminLoading) {
+    return `<section class="panel"><p class="muted">Cargando estadísticas…</p></section>`;
+  }
+  if (state.adminError) {
+    return `<section class="panel"><p class="field-error">${state.adminError}</p></section>`;
+  }
+  const stats = state.adminStats;
+  if (!stats) return `<section class="panel"><p class="muted">Sin datos.</p></section>`;
+
+  return `
+    <section class="panel">
+      <h2>Panel de administración</h2>
+      <p class="muted">Usuarios que han completado el cuestionario inicial de Rincón Fit (solo visible para ti).</p>
+      <div class="card-grid">
+        <div class="stat-card">
+          <span class="stat-label">Usuarios totales</span>
+          <span class="stat-value">${stats.total_users}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Nuevos últimos 7 días</span>
+          <span class="stat-value">${stats.last_7_days}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Nuevos últimos 30 días</span>
+          <span class="stat-value">${stats.last_30_days}</span>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Últimas altas</h2>
+      ${stats.signups.length === 0 ? '<p class="chart-empty">Todavía no hay usuarios registrados.</p>' : `
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Nombre</th><th>Objetivo</th><th>Días/semana</th><th>Alta</th></tr></thead>
+        <tbody>
+          ${stats.signups.map((s) => `
+            <tr>
+              <td>${s.full_name || '—'}</td>
+              <td>${GOAL_LABELS[s.goal] || s.goal || '—'}</td>
+              <td>${s.days_per_week ?? '—'}</td>
+              <td>${s.created_at ? new Date(s.created_at).toLocaleDateString('es-ES') : '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>
+      `}
+    </section>
+  `;
+}
+
+async function loadAdminStats() {
+  state.tab = 'admin';
+  state.adminLoading = true;
+  state.adminError = null;
+  render();
+  const { data, error } = await supabase.rpc('gym_admin_stats');
+  if (error) {
+    state.adminError = 'No se pudieron cargar las estadísticas: ' + error.message;
+    state.adminStats = null;
+  } else {
+    state.adminStats = data;
+  }
+  state.adminLoading = false;
+  render();
 }
 
 function viewResumen() {
@@ -2018,6 +2102,7 @@ function pushHistory(tab, exerciseId) {
 
 function goToTab(tab) {
   pushHistory(tab);
+  if (tab === 'admin') { loadAdminStats(); return; }
   state.tab = tab;
   render();
 }
