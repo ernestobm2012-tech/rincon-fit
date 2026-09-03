@@ -36,6 +36,8 @@ const state = {
   adminStats: null,
   adminLoading: false,
   adminError: null,
+  authMode: null,
+  passwordRecovery: false,
 };
 
 const GOAL_LABELS = {
@@ -761,7 +763,8 @@ const root = $('#app');
 function render() {
   root.dataset.ready = '1';
   if (window.__gymLoadTimeout) clearTimeout(window.__gymLoadTimeout);
-  if (!state.session) return renderAuth();
+  if (state.passwordRecovery) return renderPasswordReset();
+  if (!state.session) return state.authMode === 'forgot' ? renderForgotPassword() : renderAuth();
   if (!state.profile) return renderOnboarding();
   return renderApp();
 }
@@ -788,6 +791,7 @@ function renderAuth() {
         <p class="field-error" id="auth-error" hidden></p>
         <button type="submit" class="btn-primary" id="auth-submit">Entrar</button>
       </form>
+      <button type="button" class="link-btn" id="forgot-password-link">¿Has olvidado tu contraseña?</button>
     </section>
   `;
   let mode = 'login';
@@ -799,7 +803,13 @@ function renderAuth() {
     const password2Field = $('#auth-password2-field');
     password2Field.hidden = mode !== 'signup';
     password2Field.querySelector('input').required = mode === 'signup';
+    $('#forgot-password-link').hidden = mode !== 'login';
   }));
+
+  $('#forgot-password-link').addEventListener('click', () => {
+    state.authMode = 'forgot';
+    render();
+  });
 
   $('#auth-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -843,6 +853,99 @@ function translateAuthError(msg) {
   if (/already registered/i.test(msg)) return 'Ese email ya tiene una cuenta. Prueba a entrar.';
   if (/password/i.test(msg) && /6/i.test(msg)) return 'La contraseña debe tener al menos 6 caracteres.';
   return msg;
+}
+
+function renderForgotPassword() {
+  root.innerHTML = `
+    <section class="auth-card">
+      <h1>Rincón Fit</h1>
+      <p class="lead">Escribe tu email y te enviaremos un enlace para elegir una contraseña nueva.</p>
+      <form id="forgot-form" novalidate>
+        <label>Email
+          <input type="email" name="email" required autocomplete="email" />
+        </label>
+        <p class="field-error" id="forgot-error" hidden></p>
+        <button type="submit" class="btn-primary" id="forgot-submit">Enviar enlace</button>
+      </form>
+      <button type="button" class="link-btn" id="back-to-login-link">Volver a entrar</button>
+    </section>
+  `;
+  $('#back-to-login-link').addEventListener('click', () => {
+    state.authMode = null;
+    render();
+  });
+
+  $('#forgot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const email = fd.get('email').toString().trim();
+    const errorEl = $('#forgot-error');
+    errorEl.hidden = true;
+    $('#forgot-submit').disabled = true;
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: location.origin + location.pathname,
+      });
+      if (error) throw error;
+      errorEl.hidden = false;
+      errorEl.classList.remove('field-error');
+      errorEl.classList.add('field-ok');
+      errorEl.textContent = 'Si ese email tiene una cuenta, te hemos enviado un enlace para elegir una contraseña nueva. Revisa tu bandeja de entrada (y spam).';
+    } catch (err) {
+      errorEl.hidden = false;
+      errorEl.classList.add('field-error');
+      errorEl.classList.remove('field-ok');
+      errorEl.textContent = translateAuthError(err.message);
+    } finally {
+      $('#forgot-submit').disabled = false;
+    }
+  });
+}
+
+function renderPasswordReset() {
+  root.innerHTML = `
+    <section class="auth-card">
+      <h1>Rincón Fit</h1>
+      <p class="lead">Elige tu nueva contraseña.</p>
+      <form id="reset-form" novalidate>
+        <label>Nueva contraseña
+          <input type="password" name="password" required minlength="6" autocomplete="new-password" />
+        </label>
+        <label>Repite la nueva contraseña
+          <input type="password" name="password2" required minlength="6" autocomplete="new-password" />
+        </label>
+        <p class="field-error" id="reset-error" hidden></p>
+        <button type="submit" class="btn-primary" id="reset-submit">Guardar contraseña</button>
+      </form>
+    </section>
+  `;
+
+  $('#reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const password = fd.get('password').toString();
+    const password2 = fd.get('password2').toString();
+    const errorEl = $('#reset-error');
+    errorEl.hidden = true;
+    if (password !== password2) {
+      errorEl.hidden = false;
+      errorEl.textContent = 'Las contraseñas no coinciden.';
+      return;
+    }
+    $('#reset-submit').disabled = true;
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      state.passwordRecovery = false;
+      history.replaceState(null, '', location.pathname);
+      if (state.session) await loadUserData();
+      render();
+    } catch (err) {
+      errorEl.hidden = false;
+      errorEl.textContent = translateAuthError(err.message);
+      $('#reset-submit').disabled = false;
+    }
+  });
 }
 
 function renderOnboarding() {
@@ -2127,23 +2230,47 @@ function handlePopState(e) {
   }
 }
 
+// El enlace de recuperación de contraseña del email redirige aquí con
+// #access_token=...&type=recovery (o ?type=recovery con el flujo PKCE) en la
+// URL. Supabase ya lo procesa solo y arma una sesión con ese enlace, pero el
+// evento "PASSWORD_RECOVERY" que lo señala puede dispararse antes de que nos
+// suscribamos a onAuthStateChange (justo al crear el cliente), así que
+// comprobamos también la URL a mano para no perdernos ese caso y acabar
+// metiendo a la persona directamente en la app sin dejarle cambiar la
+// contraseña.
+function isPasswordRecoveryLink() {
+  return location.hash.includes('type=recovery') || new URLSearchParams(location.search).get('type') === 'recovery';
+}
+
 async function init() {
+  const recoveryLink = isPasswordRecoveryLink();
   const { data: { session } } = await supabase.auth.getSession();
   state.session = session;
-  if (session) await loadUserData();
+  if (recoveryLink && session) {
+    state.passwordRecovery = true;
+  } else if (session) {
+    await loadUserData();
+  }
   history.replaceState({ tab: state.tab }, '', `#${state.tab}`);
   render();
 
   window.addEventListener('popstate', handlePopState);
 
-  supabase.auth.onAuthStateChange(async (_event, session) => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
     state.session = session;
+    if (event === 'PASSWORD_RECOVERY') {
+      state.passwordRecovery = true;
+      render();
+      return;
+    }
     if (session) {
       await loadUserData();
     } else {
       state.profile = null;
       state.measurements = [];
       state.tab = 'resumen';
+      state.authMode = null;
+      state.passwordRecovery = false;
       history.replaceState(null, '', location.pathname);
     }
     render();
