@@ -16,7 +16,9 @@ Vercel...).
 ## Qué incluye
 
 - **Cuenta propia** (email + contraseña vía Supabase Auth): cada persona
-  entra con su cuenta y solo ve sus propios datos.
+  entra con su cuenta y solo ve sus propios datos. Si se olvida la
+  contraseña, puede pedir un enlace de recuperación por email desde la
+  pantalla de entrada y elegir una nueva.
 - **Cuestionario inicial**: sexo, fecha de nacimiento, altura, peso, nivel
   de actividad, objetivo (pérdida de peso / definición / aumento de masa) y
   días de entrenamiento por semana.
