@@ -40,7 +40,13 @@ Vercel...).
   son obligatorios, solo una ayuda para calentar y soltar músculo.
 - **Dieta orientativa**: calorías y macros calculados con la fórmula de
   Mifflin-St Jeor (específica por sexo), ajustados al objetivo (déficit,
-  déficit ligero o superávit), con reparto sugerido por comidas.
+  déficit ligero o superávit), con alimentos concretos y gramos por comida.
+  Cada día de la semana trae una combinación de alimentos distinta (sin
+  perder de vista las mismas calorías/macros objetivo), se puede consultar
+  la semana completa de un vistazo, adelantar a la semana que viene para
+  hacer la compra con antelación (con una lista de la compra sumando todos
+  los alimentos de los 7 días) y exportar el menú semanal a PDF desde el
+  propio navegador.
 - **Evolución guardada**: cada medición (peso, cintura, tripa por encima
   del ombligo, pecho, brazo, pierna) queda registrada con fecha, con
   gráficos de evolución de peso, cintura, tripa e IMC, y categorías (IMC,

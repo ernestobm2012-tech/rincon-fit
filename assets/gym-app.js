@@ -38,6 +38,9 @@ const state = {
   adminError: null,
   authMode: null,
   passwordRecovery: false,
+  dietSelectedDay: null,
+  dietWeekOffset: 0,
+  dietView: 'day',
 };
 
 const GOAL_LABELS = {
@@ -179,23 +182,72 @@ function dietTargets(profile, latestWeight) {
 // ---------------------------------------------------------------------------
 const FOODS = {
   huevo: { name: 'Huevo entero cocido', kcal: 155, p: 13, c: 1.1, f: 11 },
-  pollo: { name: 'Pechuga de pollo a la plancha', kcal: 165, p: 31, c: 0, f: 3.6 },
   yogurGriego: { name: 'Yogur griego 0%', kcal: 59, p: 10, c: 3.6, f: 0.4 },
+  requeson: { name: 'Requesón', kcal: 98, p: 11, c: 3.4, f: 4.3 },
+  pollo: { name: 'Pechuga de pollo a la plancha', kcal: 165, p: 31, c: 0, f: 3.6 },
+  pavo: { name: 'Pechuga de pavo a la plancha', kcal: 135, p: 30, c: 0, f: 1 },
   salmon: { name: 'Salmón a la plancha', kcal: 208, p: 20, c: 0, f: 13 },
+  atun: { name: 'Atún al natural', kcal: 132, p: 28, c: 0, f: 1 },
+  merluza: { name: 'Merluza a la plancha', kcal: 90, p: 18, c: 0, f: 1.5 },
+  ternera: { name: 'Solomillo de ternera a la plancha', kcal: 217, p: 26, c: 0, f: 12 },
+  gambas: { name: 'Gambas a la plancha', kcal: 99, p: 24, c: 0.2, f: 0.3 },
+  tofu: { name: 'Tofu firme a la plancha', kcal: 76, p: 8, c: 1.9, f: 4.8 },
   avena: { name: 'Avena en copos', kcal: 389, p: 17, c: 66, f: 7 },
+  panIntegral: { name: 'Pan integral', kcal: 247, p: 13, c: 41, f: 3.4 },
   arroz: { name: 'Arroz blanco cocido', kcal: 130, p: 2.7, c: 28, f: 0.3 },
-  manzana: { name: 'Manzana', kcal: 52, p: 0.3, c: 14, f: 0.2 },
   patata: { name: 'Patata cocida', kcal: 87, p: 2, c: 20, f: 0.1 },
+  pasta: { name: 'Pasta cocida', kcal: 158, p: 5.8, c: 31, f: 0.9 },
+  quinoa: { name: 'Quinoa cocida', kcal: 120, p: 4.4, c: 21, f: 1.9 },
+  boniato: { name: 'Boniato cocido', kcal: 90, p: 2, c: 21, f: 0.1 },
+  manzana: { name: 'Manzana', kcal: 52, p: 0.3, c: 14, f: 0.2 },
+  platano: { name: 'Plátano', kcal: 89, p: 1.1, c: 23, f: 0.3 },
+  naranja: { name: 'Naranja', kcal: 47, p: 0.9, c: 12, f: 0.1 },
+  pera: { name: 'Pera', kcal: 57, p: 0.4, c: 15, f: 0.1 },
   almendras: { name: 'Almendras', kcal: 579, p: 21, c: 22, f: 50 },
+  nueces: { name: 'Nueces', kcal: 654, p: 15, c: 14, f: 65 },
+  aguacate: { name: 'Aguacate', kcal: 160, p: 2, c: 9, f: 15 },
   aceite: { name: 'Aceite de oliva virgen extra', kcal: 884, p: 0, c: 0, f: 100 },
 };
 
-const MEAL_TEMPLATES = [
-  { label: 'Desayuno', pct: 0.25, protein: 'huevo', carb: 'avena', fat: 'almendras', extra: null },
-  { label: 'Comida', pct: 0.35, protein: 'pollo', carb: 'arroz', fat: 'aceite', extra: 'Verdura o ensalada, la cantidad que quieras' },
-  { label: 'Merienda', pct: 0.15, protein: 'yogurGriego', carb: 'manzana', fat: null, extra: null },
-  { label: 'Cena', pct: 0.25, protein: 'salmon', carb: 'patata', fat: null, extra: 'Verdura o ensalada, la cantidad que quieras' },
+// Bolsas de alimentos por función en la comida (no todas las proteínas/
+// carbohidratos pegan igual de bien en desayuno que en comida/cena), de las
+// que se elige uno distinto cada día de la semana (ver pickFoodKey) para que
+// la dieta no sea siempre la misma comida repetida los 7 días.
+const FOOD_POOLS = {
+  breakfastProtein: ['huevo', 'yogurGriego', 'requeson'],
+  mainProtein: ['pollo', 'pavo', 'salmon', 'atun', 'merluza', 'ternera', 'gambas', 'tofu'],
+  breakfastCarb: ['avena', 'panIntegral'],
+  mainCarb: ['arroz', 'patata', 'pasta', 'quinoa', 'boniato'],
+  fruit: ['manzana', 'platano', 'naranja', 'pera'],
+  fat: ['aceite', 'almendras', 'nueces', 'aguacate'],
+};
+
+const VEGGIE_SUGGESTIONS = ['brócoli', 'espinacas', 'judías verdes', 'pimiento', 'calabacín', 'zanahoria', 'champiñones', 'ensalada mixta'];
+
+const MEAL_SLOTS = [
+  { label: 'Desayuno', pct: 0.25, proteinPool: 'breakfastProtein', carbPool: 'breakfastCarb', fatPool: 'fat', veggie: false },
+  { label: 'Comida', pct: 0.35, proteinPool: 'mainProtein', carbPool: 'mainCarb', fatPool: 'fat', veggie: true },
+  { label: 'Merienda', pct: 0.15, proteinPool: 'breakfastProtein', carbPool: 'fruit', fatPool: null, veggie: false },
+  { label: 'Cena', pct: 0.25, proteinPool: 'mainProtein', carbPool: 'mainCarb', fatPool: null, veggie: true },
 ];
+
+// Elige, de forma estable, qué alimento de una bolsa toca un día de la
+// semana concreto dentro de una semana concreta (weekSeed = isoWeekSeed(),
+// +1 para "semana que viene"). mealIndex y categoryOffset desincronizan la
+// rotación entre comidas y entre categorías (proteína/carbohidrato/grasa)
+// para que no cambien siempre todas a la vez ni salga la misma combinación
+// cada semana.
+function pickFoodKey(poolName, weekSeed, weekday, mealIndex, categoryOffset) {
+  const pool = FOOD_POOLS[poolName];
+  if (!pool || pool.length === 0) return null;
+  const idx = (weekday + weekSeed + mealIndex * 2 + categoryOffset) % pool.length;
+  return pool[idx];
+}
+
+function pickVeggie(weekSeed, weekday, mealIndex) {
+  const idx = (weekday + weekSeed + mealIndex * 2) % VEGGIE_SUGGESTIONS.length;
+  return VEGGIE_SUGGESTIONS[idx];
+}
 
 // Suplementos habituales de gimnasio: información orientativa general, no
 // dosis personalizadas ni sustituto del consejo médico (ver aviso en la UI).
@@ -270,6 +322,61 @@ function mealFoodPlan(targets, template) {
     }
   }
   return items;
+}
+
+// Lunes de la semana natural actual (o de la siguiente, con offsetWeeks: 1),
+// para mostrar fechas concretas en la dieta semanal y en el PDF exportado.
+function mondayOfWeek(offsetWeeks = 0) {
+  const now = new Date();
+  const wd = (now.getDay() + 6) % 7;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - wd + offsetWeeks * 7);
+  return monday;
+}
+
+function formatWeekRange(monday) {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const opts = { day: 'numeric', month: 'short' };
+  return `${monday.toLocaleDateString('es-ES', opts)} – ${sunday.toLocaleDateString('es-ES', { ...opts, year: 'numeric' })}`;
+}
+
+// Dieta de los 7 días de una semana: cada día elige una combinación distinta
+// de alimentos por comida (ver pickFoodKey) para no repetir siempre lo
+// mismo, manteniendo las mismas calorías/macros objetivo cada día.
+function generateWeeklyDiet(targets, weekSeed) {
+  return WEEKDAY_NAMES.map((label, wd) => {
+    const meals = MEAL_SLOTS.map((slot, mealIndex) => {
+      const resolved = {
+        pct: slot.pct,
+        protein: slot.proteinPool ? pickFoodKey(slot.proteinPool, weekSeed, wd, mealIndex, 0) : null,
+        carb: slot.carbPool ? pickFoodKey(slot.carbPool, weekSeed, wd, mealIndex, 3) : null,
+        fat: slot.fatPool ? pickFoodKey(slot.fatPool, weekSeed, wd, mealIndex, 6) : null,
+      };
+      return {
+        label: slot.label,
+        pct: slot.pct,
+        items: mealFoodPlan(targets, resolved),
+        veggie: slot.veggie ? pickVeggie(weekSeed, wd, mealIndex) : null,
+      };
+    });
+    return { weekday: wd, label, meals };
+  });
+}
+
+// Suma los gramos de cada alimento a lo largo de toda la semana, para tener
+// una lista de la compra de una sola vez en lugar de 7 listas sueltas.
+function weeklyShoppingList(weekPlan) {
+  const totals = new Map();
+  weekPlan.forEach((day) => {
+    day.meals.forEach((meal) => {
+      meal.items.forEach((it) => {
+        totals.set(it.name, (totals.get(it.name) || 0) + it.grams);
+      });
+    });
+  });
+  return [...totals.entries()]
+    .map(([name, grams]) => ({ name, grams }))
+    .sort((a, b) => b.grams - a.grams);
 }
 
 // ---------------------------------------------------------------------------
@@ -1391,6 +1498,22 @@ function viewRutina() {
   `;
 }
 
+function dietMealBlockHTML(meal, targets) {
+  const mealKcal = Math.round(targets.calories * meal.pct);
+  return `
+    <div class="routine-day">
+      <h4>${meal.label} <span class="muted">— ${Math.round(meal.pct * 100)}% · ~${mealKcal} kcal</span></h4>
+      <table class="routine-table">
+        <thead><tr><th>Alimento</th><th>Cantidad</th><th>Aprox. kcal</th></tr></thead>
+        <tbody>
+          ${meal.items.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td><td>${it.kcal} kcal</td></tr>`).join('')}
+          ${meal.veggie ? `<tr><td colspan="3" class="muted">Verdura o ensalada (p. ej. ${meal.veggie}), la cantidad que quieras</td></tr>` : ''}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function viewDieta() {
   const p = state.profile;
   const m = latestMeasurement();
@@ -1404,6 +1527,18 @@ function viewDieta() {
     volumen: 'Superávit moderado (~300 kcal/día) para ganar masa muscular minimizando la grasa acumulada.',
   }[p.goal];
 
+  const weekOffset = state.dietWeekOffset;
+  const weekSeed = isoWeekSeed() + weekOffset;
+  const monday = mondayOfWeek(weekOffset);
+  const weekPlan = generateWeeklyDiet(targets, weekSeed);
+  const shoppingList = weeklyShoppingList(weekPlan);
+
+  const todayWd = todayWeekdayIndex();
+  const selectedWd = state.dietSelectedDay !== null ? state.dietSelectedDay : (weekOffset === 0 ? todayWd : 0);
+  const selectedDay = weekPlan[selectedWd];
+  const selectedDate = new Date(monday);
+  selectedDate.setDate(monday.getDate() + selectedWd);
+
   return `
     <section class="panel">
       <h2>Dieta orientativa — ${GOAL_LABELS[p.goal]}</h2>
@@ -1415,28 +1550,61 @@ function viewDieta() {
         <div class="stat-card"><span class="stat-label">Carbohidratos</span><span class="stat-value">${fmt0(targets.carbsG)} g</span></div>
       </div>
       <p>${goalNote}</p>
-      <h3>Qué comer en cada comida</h3>
-      <p class="muted">Cantidades en crudo/cocido según el alimento, calculadas para cubrir tus macros de hoy. Puedes cambiar un alimento por otro de la misma categoría (p. ej. pollo por pavo, arroz por pasta) manteniendo un peso parecido.</p>
-      ${MEAL_TEMPLATES.map((template) => {
-        const items = mealFoodPlan(targets, template);
-        const mealKcal = Math.round(targets.calories * template.pct);
-        return `
-          <div class="routine-day">
-            <h4>${template.label} <span class="muted">— ${Math.round(template.pct * 100)}% · ~${mealKcal} kcal</span></h4>
-            <table class="routine-table">
-              <thead><tr><th>Alimento</th><th>Cantidad</th><th>Aprox. kcal</th></tr></thead>
-              <tbody>
-                ${items.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td><td>${it.kcal} kcal</td></tr>`).join('')}
-                ${template.extra ? `<tr><td colspan="3" class="muted">${template.extra}</td></tr>` : ''}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }).join('')}
-      <p class="muted">Este cálculo es orientativo (usa valores nutricionales medios) y no sustituye a un/a nutricionista si tienes alguna condición médica. Puedes sustituir cualquier alimento por otro de su misma categoría (proteína/carbohidrato/grasa) con un peso similar.</p>
     </section>
 
     <section class="panel">
+      <div class="panel-head">
+        <h2>Menú semanal</h2>
+        <button type="button" class="btn-secondary btn-sm no-print" id="diet-week-toggle">${weekOffset === 0 ? 'Ver semana que viene →' : '← Volver a esta semana'}</button>
+      </div>
+      <p class="muted">Semana del ${formatWeekRange(monday)}${weekOffset === 1 ? ' — para ir haciendo la compra con antelación' : ''}. Cada día trae una combinación distinta de alimentos, manteniendo las mismas calorías y macros objetivo. Puedes cambiar cualquier alimento por otro de su misma categoría (p. ej. pollo por pavo, arroz por pasta) con un peso parecido.</p>
+
+      <div class="routine-day-tabs no-print">
+        ${weekPlan.map((day, wd) => {
+          const d = new Date(monday); d.setDate(monday.getDate() + wd);
+          const isToday = weekOffset === 0 && wd === todayWd;
+          return `<button class="day-pill ${wd === selectedWd && state.dietView === 'day' ? 'active' : ''}" data-diet-day="${wd}">${day.label} <span class="muted">${d.getDate()}/${d.getMonth() + 1}</span>${isToday ? ' · hoy' : ''}</button>`;
+        }).join('')}
+      </div>
+
+      <div class="weekday-plan-actions no-print">
+        <button type="button" class="btn-ghost btn-sm" id="diet-view-toggle">${state.dietView === 'week' ? 'Ver solo un día' : 'Ver semana completa'}</button>
+        <button type="button" class="btn-secondary btn-sm" id="diet-export-btn">🖨️ Exportar / imprimir semana</button>
+      </div>
+      <p class="muted no-print">Al exportar se abre el diálogo de impresión de tu navegador: elige "Guardar como PDF" como destino.</p>
+
+      ${state.dietView === 'week' ? `
+        ${weekPlan.map((day, wd) => {
+          const d = new Date(monday); d.setDate(monday.getDate() + wd);
+          return `
+            <div class="diet-day-block">
+              <h3>${day.label} <span class="muted">${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span></h3>
+              ${day.meals.map((meal) => dietMealBlockHTML(meal, targets)).join('')}
+            </div>
+          `;
+        }).join('')}
+
+        <div class="diet-day-block">
+          <h3>🛒 Lista de la compra de la semana</h3>
+          <p class="muted">Suma de todos los alimentos de los 7 días, para comprar de una vez.</p>
+          <div class="table-scroll">
+          <table class="routine-table">
+            <thead><tr><th>Alimento</th><th>Cantidad total</th></tr></thead>
+            <tbody>
+              ${shoppingList.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td></tr>`).join('')}
+            </tbody>
+          </table>
+          </div>
+          <p class="muted">Más verdura/ensalada al gusto (brócoli, espinacas, pimiento...) para comida y cena, y aliño/especias según prefieras.</p>
+        </div>
+      ` : `
+        <h3>${selectedDay.label} <span class="muted">${selectedDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span></h3>
+        ${selectedDay.meals.map((meal) => dietMealBlockHTML(meal, targets)).join('')}
+      `}
+      <p class="muted">Este cálculo es orientativo (usa valores nutricionales medios) y no sustituye a un/a nutricionista si tienes alguna condición médica.</p>
+    </section>
+
+    <section class="panel no-print">
       <h2>Suplementos recomendados</h2>
       <p class="muted">${SUPPLEMENT_GOAL_NOTES[p.goal]}</p>
       <div class="table-scroll">
@@ -1936,6 +2104,31 @@ function wireTabEvents() {
     state.selectedRoutineDay = null;
     render();
   });
+
+  const dietWeekToggle = $('#diet-week-toggle');
+  if (dietWeekToggle) dietWeekToggle.addEventListener('click', () => {
+    state.dietWeekOffset = state.dietWeekOffset === 0 ? 1 : 0;
+    render();
+  });
+
+  const dietViewToggle = $('#diet-view-toggle');
+  if (dietViewToggle) dietViewToggle.addEventListener('click', () => {
+    state.dietView = state.dietView === 'week' ? 'day' : 'week';
+    render();
+  });
+
+  const dietExportBtn = $('#diet-export-btn');
+  if (dietExportBtn) dietExportBtn.addEventListener('click', () => {
+    state.dietView = 'week';
+    render();
+    setTimeout(() => window.print(), 50);
+  });
+
+  $$('[data-diet-day]').forEach((btn) => btn.addEventListener('click', () => {
+    state.dietSelectedDay = Number(btn.dataset.dietDay);
+    state.dietView = 'day';
+    render();
+  }));
 
   $$('[data-swap-slot]').forEach((btn) => btn.addEventListener('click', () => {
     const dayIndex = Number(btn.dataset.swapDay);
