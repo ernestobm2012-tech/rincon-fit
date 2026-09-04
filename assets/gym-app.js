@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
 
 const SUPABASE_URL = 'https://ztsdkfwnqrlmsirfvoat.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0c2RrZnducXJsbXNpcmZ2b2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwOTM5OTksImV4cCI6MjA5ODY2OTk5OX0.ODimfaCqTpK8fkY4Oobk8kSR3rppb_afmoTTXG8H2os';
@@ -377,6 +378,128 @@ function weeklyShoppingList(weekPlan) {
   return [...totals.entries()]
     .map(([name, grams]) => ({ name, grams }))
     .sort((a, b) => b.grams - a.grams);
+}
+
+// Recalcula desde cero (barato y determinista) los datos de la semana de
+// dieta actualmente seleccionada, para los botones de descarga de PDF, que
+// no tienen acceso al cierre de viewDieta().
+function currentDietWeekPlan() {
+  const p = state.profile;
+  const m = latestMeasurement();
+  const targets = m ? dietTargets(p, Number(m.weight_kg)) : null;
+  if (!targets) return null;
+  const weekOffset = state.dietWeekOffset;
+  const weekSeed = isoWeekSeed() + weekOffset;
+  const monday = mondayOfWeek(weekOffset);
+  const weekPlan = generateWeeklyDiet(targets, weekSeed);
+  return { profile: p, targets, monday, weekPlan };
+}
+
+// ---------------------------------------------------------------------------
+// Descarga en PDF de la dieta semanal y de la lista de la compra, generado
+// directamente en el navegador con jsPDF (sin diálogo de impresión: el PDF
+// se descarga solo, como cualquier otra descarga).
+// ---------------------------------------------------------------------------
+const PDF_MARGIN = 15;
+const PDF_PAGE_HEIGHT = 297;
+const PDF_PAGE_WIDTH = 210;
+const PDF_CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
+
+function isoDateForFilename(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function pdfEnsureSpace(doc, y, needed) {
+  if (y + needed > PDF_PAGE_HEIGHT - PDF_MARGIN) {
+    doc.addPage();
+    return PDF_MARGIN;
+  }
+  return y;
+}
+
+function pdfHeader(doc, title, subtitle) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(0);
+  doc.text(title, PDF_MARGIN, PDF_MARGIN);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(90);
+  doc.text(subtitle, PDF_MARGIN, PDF_MARGIN + 6);
+  doc.setTextColor(0);
+  return PDF_MARGIN + 14;
+}
+
+function downloadWeeklyDietPDF(profile, targets, weekPlan, monday) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfHeader(doc, 'Rincón Fit — Menú semanal', `${GOAL_LABELS[profile.goal]} · Semana del ${formatWeekRange(monday)}`);
+
+  y = pdfEnsureSpace(doc, y, 6);
+  doc.setFontSize(9);
+  doc.setTextColor(90);
+  doc.text(`Objetivo diario: ${fmt0(targets.calories)} kcal · Proteína ${fmt0(targets.proteinG)} g · Grasas ${fmt0(targets.fatG)} g · Carbohidratos ${fmt0(targets.carbsG)} g`, PDF_MARGIN, y);
+  doc.setTextColor(0);
+  y += 10;
+
+  weekPlan.forEach((day, wd) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + wd);
+    y = pdfEnsureSpace(doc, y, 12);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`${day.label} — ${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`, PDF_MARGIN, y);
+    y += 6;
+
+    day.meals.forEach((meal) => {
+      y = pdfEnsureSpace(doc, y, 8);
+      const mealKcal = Math.round(targets.calories * meal.pct);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(`${meal.label} (~${mealKcal} kcal)`, PDF_MARGIN + 2, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      meal.items.forEach((it) => {
+        y = pdfEnsureSpace(doc, y, 5);
+        doc.text(`- ${it.name}: ${it.grams} g (${it.kcal} kcal)`, PDF_MARGIN + 4, y);
+        y += 5;
+      });
+      if (meal.veggie) {
+        y = pdfEnsureSpace(doc, y, 5);
+        doc.setTextColor(110);
+        doc.text(`- Verdura o ensalada (p. ej. ${meal.veggie}), al gusto`, PDF_MARGIN + 4, y);
+        doc.setTextColor(0);
+        y += 5;
+      }
+      y += 2;
+    });
+    y += 4;
+  });
+
+  doc.save(`rincon-fit-dieta-semana-${isoDateForFilename(monday)}.pdf`);
+}
+
+function downloadShoppingListPDF(shoppingList, monday) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfHeader(doc, 'Rincón Fit — Lista de la compra', `Semana del ${formatWeekRange(monday)}`);
+  y += 4;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10.5);
+  shoppingList.forEach((it) => {
+    y = pdfEnsureSpace(doc, y, 7);
+    doc.text(it.name, PDF_MARGIN, y);
+    doc.text(`${it.grams} g`, PDF_MARGIN + PDF_CONTENT_WIDTH, y, { align: 'right' });
+    y += 7;
+  });
+
+  y = pdfEnsureSpace(doc, y, 12) + 4;
+  doc.setFontSize(8.5);
+  doc.setTextColor(110);
+  const note = 'Más verdura/ensalada al gusto (brócoli, espinacas, pimiento...) para comida y cena, y aliño/especias según prefieras.';
+  doc.text(doc.splitTextToSize(note, PDF_CONTENT_WIDTH), PDF_MARGIN, y);
+
+  doc.save(`rincon-fit-lista-compra-${isoDateForFilename(monday)}.pdf`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1591,9 +1714,9 @@ function viewDieta() {
         <button type="button" class="btn-ghost btn-sm ${state.dietView === 'shopping' ? 'active' : ''}" data-diet-view="shopping">🛒 Lista de la compra</button>
       </div>
       <div class="weekday-plan-actions no-print">
-        <button type="button" class="btn-secondary btn-sm" id="diet-export-btn">🖨️ ${state.dietView === 'shopping' ? 'Exportar / imprimir lista de la compra' : state.dietView === 'week' ? 'Exportar / imprimir semana' : 'Exportar / imprimir día'}</button>
+        <button type="button" class="btn-secondary btn-sm" id="diet-download-week-btn">⬇️ Descargar dieta semanal (PDF)</button>
+        <button type="button" class="btn-secondary btn-sm" id="diet-download-shopping-btn">⬇️ Descargar lista de la compra (PDF)</button>
       </div>
-      <p class="muted no-print">Al exportar se abre el diálogo de impresión de tu navegador: elige "Guardar como PDF" como destino.</p>
 
       ${state.dietView === 'week' ? `
         ${weekPlan.map((day, wd) => {
@@ -2127,9 +2250,16 @@ function wireTabEvents() {
     render();
   }));
 
-  const dietExportBtn = $('#diet-export-btn');
-  if (dietExportBtn) dietExportBtn.addEventListener('click', () => {
-    setTimeout(() => window.print(), 50);
+  const dietDownloadWeekBtn = $('#diet-download-week-btn');
+  if (dietDownloadWeekBtn) dietDownloadWeekBtn.addEventListener('click', () => {
+    const data = currentDietWeekPlan();
+    if (data) downloadWeeklyDietPDF(data.profile, data.targets, data.weekPlan, data.monday);
+  });
+
+  const dietDownloadShoppingBtn = $('#diet-download-shopping-btn');
+  if (dietDownloadShoppingBtn) dietDownloadShoppingBtn.addEventListener('click', () => {
+    const data = currentDietWeekPlan();
+    if (data) downloadShoppingListPDF(weeklyShoppingList(data.weekPlan), data.monday);
   });
 
   $$('[data-diet-day]').forEach((btn) => btn.addEventListener('click', () => {
