@@ -44,9 +44,9 @@ Vercel...).
   Cada día de la semana trae una combinación de alimentos distinta (sin
   perder de vista las mismas calorías/macros objetivo), se puede consultar
   la semana completa de un vistazo, adelantar a la semana que viene para
-  hacer la compra con antelación (con una lista de la compra sumando todos
-  los alimentos de los 7 días) y exportar el menú semanal a PDF desde el
-  propio navegador.
+  hacer la compra con antelación, y exportar a PDF desde el propio
+  navegador el día, la semana completa o solo la lista de la compra (suma
+  de todos los alimentos de los 7 días) por separado.
 - **Evolución guardada**: cada medición (peso, cintura, tripa por encima
   del ombligo, pecho, brazo, pierna) queda registrada con fecha, con
   gráficos de evolución de peso, cintura, tripa e IMC, y categorías (IMC,

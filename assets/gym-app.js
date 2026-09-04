@@ -1514,6 +1514,24 @@ function dietMealBlockHTML(meal, targets) {
   `;
 }
 
+function shoppingListBlockHTML(shoppingList) {
+  return `
+    <div class="diet-day-block">
+      <h3>🛒 Lista de la compra de la semana</h3>
+      <p class="muted">Suma de todos los alimentos de los 7 días, para comprar de una vez.</p>
+      <div class="table-scroll">
+      <table class="routine-table">
+        <thead><tr><th>Alimento</th><th>Cantidad total</th></tr></thead>
+        <tbody>
+          ${shoppingList.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td></tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+      <p class="muted">Más verdura/ensalada al gusto (brócoli, espinacas, pimiento...) para comida y cena, y aliño/especias según prefieras.</p>
+    </div>
+  `;
+}
+
 function viewDieta() {
   const p = state.profile;
   const m = latestMeasurement();
@@ -1568,8 +1586,12 @@ function viewDieta() {
       </div>
 
       <div class="weekday-plan-actions no-print">
-        <button type="button" class="btn-ghost btn-sm" id="diet-view-toggle">${state.dietView === 'week' ? 'Ver solo un día' : 'Ver semana completa'}</button>
-        <button type="button" class="btn-secondary btn-sm" id="diet-export-btn">🖨️ Exportar / imprimir semana</button>
+        <button type="button" class="btn-ghost btn-sm ${state.dietView === 'day' ? 'active' : ''}" data-diet-view="day">📅 Un día</button>
+        <button type="button" class="btn-ghost btn-sm ${state.dietView === 'week' ? 'active' : ''}" data-diet-view="week">📋 Semana completa</button>
+        <button type="button" class="btn-ghost btn-sm ${state.dietView === 'shopping' ? 'active' : ''}" data-diet-view="shopping">🛒 Lista de la compra</button>
+      </div>
+      <div class="weekday-plan-actions no-print">
+        <button type="button" class="btn-secondary btn-sm" id="diet-export-btn">🖨️ ${state.dietView === 'shopping' ? 'Exportar / imprimir lista de la compra' : state.dietView === 'week' ? 'Exportar / imprimir semana' : 'Exportar / imprimir día'}</button>
       </div>
       <p class="muted no-print">Al exportar se abre el diálogo de impresión de tu navegador: elige "Guardar como PDF" como destino.</p>
 
@@ -1583,20 +1605,9 @@ function viewDieta() {
             </div>
           `;
         }).join('')}
-
-        <div class="diet-day-block">
-          <h3>🛒 Lista de la compra de la semana</h3>
-          <p class="muted">Suma de todos los alimentos de los 7 días, para comprar de una vez.</p>
-          <div class="table-scroll">
-          <table class="routine-table">
-            <thead><tr><th>Alimento</th><th>Cantidad total</th></tr></thead>
-            <tbody>
-              ${shoppingList.map((it) => `<tr><td>${it.name}</td><td>${it.grams} g</td></tr>`).join('')}
-            </tbody>
-          </table>
-          </div>
-          <p class="muted">Más verdura/ensalada al gusto (brócoli, espinacas, pimiento...) para comida y cena, y aliño/especias según prefieras.</p>
-        </div>
+        ${shoppingListBlockHTML(shoppingList)}
+      ` : state.dietView === 'shopping' ? `
+        ${shoppingListBlockHTML(shoppingList)}
       ` : `
         <h3>${selectedDay.label} <span class="muted">${selectedDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span></h3>
         ${selectedDay.meals.map((meal) => dietMealBlockHTML(meal, targets)).join('')}
@@ -2111,16 +2122,13 @@ function wireTabEvents() {
     render();
   });
 
-  const dietViewToggle = $('#diet-view-toggle');
-  if (dietViewToggle) dietViewToggle.addEventListener('click', () => {
-    state.dietView = state.dietView === 'week' ? 'day' : 'week';
+  $$('[data-diet-view]').forEach((btn) => btn.addEventListener('click', () => {
+    state.dietView = btn.dataset.dietView;
     render();
-  });
+  }));
 
   const dietExportBtn = $('#diet-export-btn');
   if (dietExportBtn) dietExportBtn.addEventListener('click', () => {
-    state.dietView = 'week';
-    render();
     setTimeout(() => window.print(), 50);
   });
 
