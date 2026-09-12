@@ -42,7 +42,18 @@ const state = {
   dietSelectedDay: null,
   dietWeekOffset: 0,
   dietView: 'day',
+  // Cambio de "dónde entrenas" solo para esta sesión (p. ej. un día que no
+  // puedes ir al gimnasio y entrenas en casa): no toca el training_location
+  // guardado en el perfil, se olvida al recargar la página.
+  rutinaLocationOverride: null,
 };
+
+// Perfil "efectivo" para generar la rutina: igual que el guardado, salvo
+// que haya un cambio de ubicación solo para hoy (ver rutinaLocationOverride).
+function effectiveTrainingProfile(profile) {
+  if (!state.rutinaLocationOverride || !profile) return profile;
+  return { ...profile, training_location: state.rutinaLocationOverride };
+}
 
 const GOAL_LABELS = {
   perdida_peso: 'Pérdida de peso',
@@ -109,7 +120,7 @@ function homeEquipmentFieldsetHTML(selected) {
       ${Object.entries(HOME_EQUIPMENT_LABELS).map(([v, l]) => `
         <label class="radio"><input type="checkbox" name="home_equipment" value="${v}" ${sel.includes(v) ? 'checked' : ''} /> ${l}</label>
       `).join('')}
-      <p class="muted">Además de esto, siempre incluimos ejercicios de peso corporal (sin ningún material).</p>
+      <p class="muted">Además de esto, siempre incluimos ejercicios de peso corporal (sin ningún material). Guarda esto aunque entrenes normalmente en el gimnasio: te servirá los días que no puedas ir y quieras entrenar en casa.</p>
     </fieldset>
   `;
 }
@@ -117,27 +128,13 @@ function homeEquipmentFieldsetHTML(selected) {
 function trainingLocationFieldsetHTML(selectedLocation, selectedEquipment) {
   return `
     <fieldset>
-      <legend>¿Dónde entrenas?</legend>
+      <legend>¿Dónde entrenas habitualmente?</legend>
       ${Object.entries(TRAINING_LOCATION_LABELS).map(([v, l]) => `
         <label class="radio"><input type="radio" name="training_location" value="${v}" ${v === selectedLocation ? 'checked' : ''} /> ${l}</label>
       `).join('')}
     </fieldset>
-    <div id="home-equipment-wrap" ${selectedLocation === 'casa' ? '' : 'hidden'}>
-      ${homeEquipmentFieldsetHTML(selectedEquipment)}
-    </div>
+    ${homeEquipmentFieldsetHTML(selectedEquipment)}
   `;
-}
-
-// Muestra/oculta el bloque de "¿qué tienes en casa?" según el radio de
-// ubicación elegido, dentro de un formulario dado (onboarding o perfil).
-function wireTrainingLocationToggle(formEl) {
-  const wrap = formEl.querySelector('#home-equipment-wrap');
-  if (!wrap) return;
-  formEl.querySelectorAll('input[name=training_location]').forEach((radio) => {
-    radio.addEventListener('change', () => {
-      if (radio.checked) wrap.hidden = radio.value !== 'casa';
-    });
-  });
 }
 
 function injuriesFieldsetHTML(selected) {
@@ -1291,8 +1288,6 @@ function renderOnboarding() {
     </section>
   `;
 
-  wireTrainingLocationToggle($('#onboarding-form'));
-
   $('#onboarding-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -1534,12 +1529,13 @@ async function refreshAllExerciseLogs() {
 
 function viewRutina() {
   const p = state.profile;
+  const effP = effectiveTrainingProfile(p);
   const vol = GOAL_VOLUME[p.goal];
   const injuries = p.injuries || [];
   const weekdayPlan = weekdayPlanFor(p);
   const baseDaysCount = (SPLITS[p.days_per_week] || SPLITS[3]).length;
   const extraDaysCount = extraDaysCountFor(weekdayPlan, baseDaysCount);
-  const routine = applyRoutineOverrides(generateRoutine(p, state.exercises, currentRoutineSeed(), extraDaysCount));
+  const routine = applyRoutineOverrides(generateRoutine(effP, state.exercises, currentRoutineSeed(), extraDaysCount));
   const weekdaysForRoutineDay = weekdaysByRoutineDay(weekdayPlan, routine.length);
   const todayWd = todayWeekdayIndex();
   const todayRoutineIndex = weekdayPlan[todayWd];
@@ -1552,13 +1548,16 @@ function viewRutina() {
   const extraLogsToday = state.allExerciseLogs.filter((l) => l.logged_at === today && !plannedIds.has(l.exercise_id) && !stretchIds.has(l.exercise_id));
   const extraExerciseIdsToday = [...new Set(extraLogsToday.map((l) => l.exercise_id))];
   const availableExtra = state.exercises
-    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id) && e.muscle_group !== 'estiramiento' && isEquipmentAvailable(e, p))
+    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id) && e.muscle_group !== 'estiramiento' && isEquipmentAvailable(e, effP))
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
   const stretches = state.exercises.filter((e) => e.muscle_group === 'estiramiento');
   const stretchesBefore = stretches.filter((e) => e.stretch_timing === 'antes' || e.stretch_timing === 'ambos');
   const stretchesAfter = stretches.filter((e) => e.stretch_timing === 'despues' || e.stretch_timing === 'ambos');
+
+  const effLocation = effP.training_location === 'casa' ? 'casa' : 'gimnasio';
+  const overrideActive = state.rutinaLocationOverride !== null;
 
   return `
     <section class="panel">
@@ -1570,6 +1569,11 @@ function viewRutina() {
       <p class="muted">Cada semana se renuevan los ejercicios automáticamente (el grupo muscular del día puede repetirse, pero se evitan en lo posible los mismos ejercicios de la semana pasada). "Generar otra variante" hace lo mismo al momento, dentro de esta semana.</p>
       <p class="muted">¿No tienes alguna de estas máquinas en tu gimnasio? Pulsa "Cambiar" para sustituirla por otra del mismo grupo muscular.</p>
       ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
+
+      <div class="weekday-plan-actions">
+        <button type="button" class="btn-ghost btn-sm" id="rutina-location-toggle">${effLocation === 'gimnasio' ? '🏠 Hoy no puedo ir al gimnasio' : '🏋️ Hoy sí voy al gimnasio'}</button>
+      </div>
+      ${overrideActive ? `<p class="muted">Mostrando ejercicios de ${effLocation === 'casa' ? 'casa' : 'gimnasio'} solo para hoy, según lo que tienes marcado en <strong>Perfil</strong>. Esto no cambia tu configuración habitual.</p>` : ''}
 
       <div class="routine-day-tabs">
         ${routine.map((d, i) => {
@@ -2264,6 +2268,18 @@ function wireTabEvents() {
     render();
   });
 
+  const rutinaLocationToggle = $('#rutina-location-toggle');
+  if (rutinaLocationToggle) rutinaLocationToggle.addEventListener('click', () => {
+    const defaultLocation = state.profile.training_location === 'casa' ? 'casa' : 'gimnasio';
+    const currentEffective = effectiveTrainingProfile(state.profile).training_location === 'casa' ? 'casa' : 'gimnasio';
+    const next = currentEffective === 'casa' ? 'gimnasio' : 'casa';
+    // Si "next" coincide con lo que ya tiene guardado en Perfil, no hace
+    // falta ningún cambio de sesión: se quita el aviso de "solo para hoy".
+    state.rutinaLocationOverride = next === defaultLocation ? null : next;
+    state.routineOverrides = {};
+    render();
+  });
+
   // Recuerda si el usuario tenía desplegados los estiramientos para que no
   // se cierren solos cada vez que la pestaña Rutina se vuelve a renderizar
   // (p. ej. al marcar uno como hecho).
@@ -2345,12 +2361,13 @@ function wireTabEvents() {
     const slotIndex = Number(btn.dataset.swapSlot);
     const current = state.exercises.find((e) => e.id === btn.dataset.swapExercise);
     if (!current) return;
+    const effP = effectiveTrainingProfile(state.profile);
     const baseDaysCount = (SPLITS[state.profile.days_per_week] || SPLITS[3]).length;
     const extraDaysCount = extraDaysCountFor(weekdayPlanFor(state.profile), baseDaysCount);
-    const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, currentRoutineSeed(), extraDaysCount));
+    const routine = applyRoutineOverrides(generateRoutine(effP, state.exercises, currentRoutineSeed(), extraDaysCount));
     const usedIdsThatDay = new Set(routine[dayIndex].exercises.map((e) => e.id));
     const groupExercises = state.exercises
-      .filter((e) => e.muscle_group === current.muscle_group && isEquipmentAvailable(e, state.profile))
+      .filter((e) => e.muscle_group === current.muscle_group && isEquipmentAvailable(e, effP))
       .sort((a, b) => a.sort_order - b.sort_order);
     const currentIdx = groupExercises.findIndex((e) => e.id === current.id);
     let next = null;
@@ -2498,7 +2515,6 @@ function wireTabEvents() {
 
   const profileForm = $('#profile-form');
   if (profileForm) {
-    wireTrainingLocationToggle(profileForm);
     profileForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
