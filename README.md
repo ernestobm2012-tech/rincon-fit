@@ -32,7 +32,10 @@ Vercel...).
   series/repeticiones/descanso ajustados al objetivo. Se renueva sola cada
   semana natural evitando repetir los ejercicios de la semana anterior en
   la medida que el catálogo lo permite, y también se
-  puede regenerar a mano para tener variedad al momento.
+  puede regenerar a mano para tener variedad al momento. Un botón en
+  Rutina ("Hoy no puedo ir al gimnasio" / "Hoy sí voy al gimnasio") permite
+  cambiar de sitio solo para ese día (usando el equipo de casa ya guardado
+  en Perfil), sin tocar tu configuración habitual.
 - **Días de entreno editables**: qué día de la semana corresponde a cada
   entrenamiento se puede personalizar desde "Editar mis días" en Rutina —
   repetir uno ya existente, añadir un "Día nuevo" con ejercicios propios,
