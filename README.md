@@ -20,14 +20,18 @@ Vercel...).
   contraseña, puede pedir un enlace de recuperación por email desde la
   pantalla de entrada y elegir una nueva.
 - **Cuestionario inicial**: sexo, fecha de nacimiento, altura, peso, nivel
-  de actividad, objetivo (pérdida de peso / definición / aumento de masa) y
-  días de entrenamiento por semana.
-- **Rutina generada** a partir de un catálogo de 58 ejercicios (máquinas,
-  barra, peso corporal y bastantes con mancuernas) con su máquina/equipo,
-  grupo muscular e instrucciones, repartida en un split semanal según los
-  días disponibles, con series/repeticiones/descanso ajustados al objetivo.
-  Se renueva sola cada semana natural evitando repetir los ejercicios de la
-  semana anterior en la medida que el catálogo lo permite, y también se
+  de actividad, objetivo (pérdida de peso / definición / aumento de masa),
+  días de entrenamiento por semana y dónde entrenas (gimnasio o casa; si es
+  casa, qué tienes disponible: mancuernas, TRX, bicicleta estática, cinta
+  de correr, barra de dominadas, silla resistente).
+- **Rutina generada** a partir de un catálogo de 86 ejercicios (máquinas de
+  gimnasio, barra, mancuernas, peso corporal, TRX y ejercicios de casa con
+  silla o barra de dominadas) con su máquina/equipo, grupo muscular e
+  instrucciones, filtrado según dónde entrenas y qué equipo tienes,
+  repartida en un split semanal según los días disponibles, con
+  series/repeticiones/descanso ajustados al objetivo. Se renueva sola cada
+  semana natural evitando repetir los ejercicios de la semana anterior en
+  la medida que el catálogo lo permite, y también se
   puede regenerar a mano para tener variedad al momento.
 - **Días de entreno editables**: qué día de la semana corresponde a cada
   entrenamiento se puede personalizar desde "Editar mis días" en Rutina —
@@ -78,13 +82,16 @@ usuario ni de las tablas de los otros dos proyectos, y viceversa.
 ### Tablas (prefijo `gym_`)
 
 - `gym_profiles` — un perfil por usuario: sexo, altura, fecha de
-  nacimiento, nivel de actividad, objetivo, días de entrenamiento y, si el
-  usuario lo ha personalizado, qué día de rutina toca cada día de la semana
-  (`weekday_plan`).
+  nacimiento, nivel de actividad, objetivo, días de entrenamiento, dónde
+  entrena (`training_location`: gimnasio/casa) y, si es casa, qué tiene
+  disponible (`home_equipment`) y, si el usuario lo ha personalizado, qué
+  día de rutina toca cada día de la semana (`weekday_plan`).
 - `gym_measurements` — histórico de mediciones (peso y perímetros) por
   usuario y fecha, una fila por día.
 - `gym_exercises` — catálogo de ejercicios/máquinas (lectura pública,
-  gestionado solo desde el dashboard/SQL, no editable desde el navegador).
+  gestionado solo desde el dashboard/SQL, no editable desde el navegador),
+  con el equipo que necesita cada uno (`equipment`) para filtrar la rutina
+  según dónde entrena cada usuario.
 - `gym_exercise_logs` / `gym_exercise_notes` — progreso (peso/reps/series
   para fuerza, velocidad/duración para cardio) y nota personal por usuario
   y ejercicio.
