@@ -112,7 +112,21 @@ function isEquipmentAvailable(exercise, profile) {
   return (profile.home_equipment || []).includes(exercise.equipment);
 }
 
-function homeEquipmentFieldsetHTML(selected) {
+// Escapa texto libre introducido por el usuario antes de insertarlo en HTML
+// (tanto en contenido como dentro de un atributo value="...").
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Lee un campo de texto libre opcional de un formulario, recortando espacios
+// y guardando null en vez de una cadena vacía.
+function formTextOrNull(fd, key) {
+  const v = fd.get(key);
+  const s = v ? v.toString().trim() : '';
+  return s || null;
+}
+
+function homeEquipmentFieldsetHTML(selected, otherText) {
   const sel = selected || [];
   return `
     <fieldset id="home-equipment-fieldset">
@@ -120,12 +134,15 @@ function homeEquipmentFieldsetHTML(selected) {
       ${Object.entries(HOME_EQUIPMENT_LABELS).map(([v, l]) => `
         <label class="radio"><input type="checkbox" name="home_equipment" value="${v}" ${sel.includes(v) ? 'checked' : ''} /> ${l}</label>
       `).join('')}
-      <p class="muted">Además de esto, siempre incluimos ejercicios de peso corporal (sin ningún material). Guarda esto aunque entrenes normalmente en el gimnasio: te servirá los días que no puedas ir y quieras entrenar en casa.</p>
+      <label>Otro (especifica)
+        <input type="text" name="home_equipment_other" value="${escapeHtml(otherText)}" placeholder="p. ej. kettlebell, banda elástica..." maxlength="200" />
+      </label>
+      <p class="muted">Además de esto, siempre incluimos ejercicios de peso corporal (sin ningún material). Guarda esto aunque entrenes normalmente en el gimnasio: te servirá los días que no puedas ir y quieras entrenar en casa. Lo que escribas en "Otro" es una nota para ti: de momento no genera ejercicios específicos para ese material.</p>
     </fieldset>
   `;
 }
 
-function trainingLocationFieldsetHTML(selectedLocation, selectedEquipment) {
+function trainingLocationFieldsetHTML(selectedLocation, selectedEquipment, otherEquipmentText) {
   return `
     <fieldset>
       <legend>¿Dónde entrenas habitualmente?</legend>
@@ -133,11 +150,11 @@ function trainingLocationFieldsetHTML(selectedLocation, selectedEquipment) {
         <label class="radio"><input type="radio" name="training_location" value="${v}" ${v === selectedLocation ? 'checked' : ''} /> ${l}</label>
       `).join('')}
     </fieldset>
-    ${homeEquipmentFieldsetHTML(selectedEquipment)}
+    ${homeEquipmentFieldsetHTML(selectedEquipment, otherEquipmentText)}
   `;
 }
 
-function injuriesFieldsetHTML(selected) {
+function injuriesFieldsetHTML(selected, otherText) {
   const sel = selected || [];
   return `
     <fieldset>
@@ -145,7 +162,10 @@ function injuriesFieldsetHTML(selected) {
       ${Object.entries(INJURY_LABELS).map(([v, l]) => `
         <label class="radio"><input type="checkbox" name="injuries" value="${v}" ${sel.includes(v) ? 'checked' : ''} /> ${l}</label>
       `).join('')}
-      <p class="muted" style="margin: 8px 0 0;">Evitaremos en lo posible los ejercicios de más riesgo para esa zona. No sustituye el consejo de un profesional.</p>
+      <label>Otra (especifica)
+        <input type="text" name="injuries_other" value="${escapeHtml(otherText)}" placeholder="p. ej. tendinitis en el hombro derecho" maxlength="200" />
+      </label>
+      <p class="muted" style="margin: 8px 0 0;">Evitaremos en lo posible los ejercicios de más riesgo para las zonas marcadas arriba. Lo que escribas en "Otra" se mostrará como aviso en Rutina, pero no filtra ejercicios automáticamente al no coincidir con ninguna zona concreta. No sustituye el consejo de un profesional.</p>
     </fieldset>
   `;
 }
@@ -1280,8 +1300,8 @@ function renderOnboarding() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
-        ${trainingLocationFieldsetHTML('gimnasio', [])}
-        ${injuriesFieldsetHTML([])}
+        ${trainingLocationFieldsetHTML('gimnasio', [], '')}
+        ${injuriesFieldsetHTML([], '')}
         <p class="field-error" id="onboarding-error" hidden></p>
         <button type="submit" class="btn-primary">Empezar</button>
       </form>
@@ -1305,7 +1325,9 @@ function renderOnboarding() {
       days_per_week: Number(fd.get('days_per_week')),
       training_location: fd.get('training_location'),
       home_equipment: fd.getAll('home_equipment'),
+      home_equipment_other: formTextOrNull(fd, 'home_equipment_other'),
       injuries: fd.getAll('injuries'),
+      injuries_other: formTextOrNull(fd, 'injuries_other'),
     };
     const weightKg = Number(fd.get('weight_kg'));
     try {
@@ -1568,7 +1590,7 @@ function viewRutina() {
       <p>Pauta general: <strong>${vol.sets} series</strong> de <strong>${vol.reps} repeticiones</strong>, descanso de <strong>${vol.rest}</strong> entre series. Ajusta el peso para que las últimas 2 repeticiones cuesten de verdad sin perder la técnica.</p>
       <p class="muted">Cada semana se renuevan los ejercicios automáticamente (el grupo muscular del día puede repetirse, pero se evitan en lo posible los mismos ejercicios de la semana pasada). "Generar otra variante" hace lo mismo al momento, dentro de esta semana.</p>
       <p class="muted">¿No tienes alguna de estas máquinas en tu gimnasio? Pulsa "Cambiar" para sustituirla por otra del mismo grupo muscular.</p>
-      ${injuries.length > 0 ? `<p class="muted">⚠️ Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. Cambia esto en <strong>Perfil</strong>.</p>` : ''}
+      ${(injuries.length > 0 || p.injuries_other) ? `<p class="muted">⚠️ ${injuries.length > 0 ? `Evitando en lo posible ejercicios de riesgo para: <strong>${injuries.map((i) => INJURY_LABELS[i] || i).join(', ')}</strong>. ` : ''}${p.injuries_other ? `Nota: <strong>${escapeHtml(p.injuries_other)}</strong> (no se filtra automáticamente). ` : ''}Cambia esto en <strong>Perfil</strong>.</p>` : ''}
 
       <div class="weekday-plan-actions">
         <button type="button" class="btn-ghost btn-sm" id="rutina-location-toggle">${effLocation === 'gimnasio' ? '🏠 Hoy no puedo ir al gimnasio' : '🏋️ Hoy sí voy al gimnasio'}</button>
@@ -2206,8 +2228,8 @@ function viewPerfil() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === p.days_per_week ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
-        ${trainingLocationFieldsetHTML(p.training_location || 'gimnasio', p.home_equipment || [])}
-        ${injuriesFieldsetHTML(p.injuries)}
+        ${trainingLocationFieldsetHTML(p.training_location || 'gimnasio', p.home_equipment || [], p.home_equipment_other)}
+        ${injuriesFieldsetHTML(p.injuries, p.injuries_other)}
         <p class="field-error" id="profile-error" hidden></p>
         <p class="field-ok" id="profile-ok" hidden>Guardado.</p>
         <button type="submit" class="btn-primary">Guardar cambios</button>
@@ -2533,7 +2555,9 @@ function wireTabEvents() {
         days_per_week: Number(fd.get('days_per_week')),
         training_location: fd.get('training_location'),
         home_equipment: fd.getAll('home_equipment'),
+        home_equipment_other: formTextOrNull(fd, 'home_equipment_other'),
         injuries: fd.getAll('injuries'),
+        injuries_other: formTextOrNull(fd, 'injuries_other'),
       };
       try {
         const { error } = await supabase.from('gym_profiles').upsert(payload);
