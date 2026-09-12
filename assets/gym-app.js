@@ -79,6 +79,67 @@ const INJURY_LABELS = {
   muñeca: 'Muñeca', codo: 'Codo', cadera: 'Cadera', tobillo: 'Tobillo',
 };
 
+const TRAINING_LOCATION_LABELS = { gimnasio: 'Gimnasio', casa: 'Casa' };
+
+// Qué se puede marcar como disponible en casa. El peso corporal no está en
+// esta lista porque siempre está disponible (no es "equipo").
+const HOME_EQUIPMENT_LABELS = {
+  mancuernas: 'Mancuernas',
+  trx: 'TRX / cinta de suspensión',
+  bicicleta_estatica: 'Bicicleta estática',
+  cinta_correr: 'Cinta de correr',
+  barra_dominadas: 'Barra de dominadas',
+  silla: 'Silla resistente',
+};
+
+// Si el perfil entrena en el gimnasio, todo el catálogo está disponible
+// (como hasta ahora). Si entrena en casa, solo el peso corporal (siempre
+// disponible) más lo que haya marcado en home_equipment.
+function isEquipmentAvailable(exercise, profile) {
+  if (!profile || profile.training_location !== 'casa') return true;
+  if (exercise.equipment === 'peso_corporal') return true;
+  return (profile.home_equipment || []).includes(exercise.equipment);
+}
+
+function homeEquipmentFieldsetHTML(selected) {
+  const sel = selected || [];
+  return `
+    <fieldset id="home-equipment-fieldset">
+      <legend>¿Qué tienes en casa?</legend>
+      ${Object.entries(HOME_EQUIPMENT_LABELS).map(([v, l]) => `
+        <label class="radio"><input type="checkbox" name="home_equipment" value="${v}" ${sel.includes(v) ? 'checked' : ''} /> ${l}</label>
+      `).join('')}
+      <p class="muted">Además de esto, siempre incluimos ejercicios de peso corporal (sin ningún material).</p>
+    </fieldset>
+  `;
+}
+
+function trainingLocationFieldsetHTML(selectedLocation, selectedEquipment) {
+  return `
+    <fieldset>
+      <legend>¿Dónde entrenas?</legend>
+      ${Object.entries(TRAINING_LOCATION_LABELS).map(([v, l]) => `
+        <label class="radio"><input type="radio" name="training_location" value="${v}" ${v === selectedLocation ? 'checked' : ''} /> ${l}</label>
+      `).join('')}
+    </fieldset>
+    <div id="home-equipment-wrap" ${selectedLocation === 'casa' ? '' : 'hidden'}>
+      ${homeEquipmentFieldsetHTML(selectedEquipment)}
+    </div>
+  `;
+}
+
+// Muestra/oculta el bloque de "¿qué tienes en casa?" según el radio de
+// ubicación elegido, dentro de un formulario dado (onboarding o perfil).
+function wireTrainingLocationToggle(formEl) {
+  const wrap = formEl.querySelector('#home-equipment-wrap');
+  if (!wrap) return;
+  formEl.querySelectorAll('input[name=training_location]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) wrap.hidden = radio.value !== 'casa';
+    });
+  });
+}
+
 function injuriesFieldsetHTML(selected) {
   const sel = selected || [];
   return `
@@ -659,11 +720,16 @@ function isSafeForInjuries(exercise, injuries) {
 // objetivo.
 const DAY_EXERCISE_TARGET = 8;
 
-function exercisePoolForGroup(exercises, group, injuries) {
-  let pool = exercises.filter((e) => e.muscle_group === group && isSafeForInjuries(e, injuries));
+function exercisePoolForGroup(exercises, group, injuries, profile) {
+  let pool = exercises.filter((e) => e.muscle_group === group && isSafeForInjuries(e, injuries) && isEquipmentAvailable(e, profile));
   if (pool.length === 0) {
-    // Sin alternativa segura para esta lesión: mejor mostrar la opción
-    // normal (avisada en el detalle) que dejar el hueco vacío.
+    // Sin alternativa segura y disponible con tu equipo: relaja primero la
+    // lesión (avisada en el detalle) antes de dejar el hueco vacío.
+    pool = exercises.filter((e) => e.muscle_group === group && isEquipmentAvailable(e, profile));
+  }
+  if (pool.length === 0) {
+    // Ni así: mejor mostrar algo (aunque no encaje con tu equipo) que un
+    // hueco totalmente vacío.
     pool = exercises.filter((e) => e.muscle_group === group);
   }
   return pool;
@@ -715,7 +781,7 @@ function generateRoutine(profile, exercises, seed, extraDaysCount = 0) {
   const injuries = profile.injuries || [];
 
   return days.map((groups, i) => {
-    const stablePools = groups.map((group) => seededShuffle(exercisePoolForGroup(exercises, group, injuries), i + group.length));
+    const stablePools = groups.map((group) => seededShuffle(exercisePoolForGroup(exercises, group, injuries, profile), i + group.length));
     const counts = groupCountsForDay(stablePools.map((pool) => pool.length));
     const picked = stablePools.map((pool, gi) => rotatePoolOrder(pool, seed, counts[gi]).slice(0, counts[gi]));
 
@@ -1217,12 +1283,15 @@ function renderOnboarding() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
+        ${trainingLocationFieldsetHTML('gimnasio', [])}
         ${injuriesFieldsetHTML([])}
         <p class="field-error" id="onboarding-error" hidden></p>
         <button type="submit" class="btn-primary">Empezar</button>
       </form>
     </section>
   `;
+
+  wireTrainingLocationToggle($('#onboarding-form'));
 
   $('#onboarding-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1239,6 +1308,8 @@ function renderOnboarding() {
       activity_level: fd.get('activity_level'),
       goal: fd.get('goal'),
       days_per_week: Number(fd.get('days_per_week')),
+      training_location: fd.get('training_location'),
+      home_equipment: fd.getAll('home_equipment'),
       injuries: fd.getAll('injuries'),
     };
     const weightKg = Number(fd.get('weight_kg'));
@@ -1481,7 +1552,7 @@ function viewRutina() {
   const extraLogsToday = state.allExerciseLogs.filter((l) => l.logged_at === today && !plannedIds.has(l.exercise_id) && !stretchIds.has(l.exercise_id));
   const extraExerciseIdsToday = [...new Set(extraLogsToday.map((l) => l.exercise_id))];
   const availableExtra = state.exercises
-    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id) && e.muscle_group !== 'estiramiento')
+    .filter((e) => !plannedIds.has(e.id) && !extraExerciseIdsToday.includes(e.id) && e.muscle_group !== 'estiramiento' && isEquipmentAvailable(e, p))
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
@@ -2131,6 +2202,7 @@ function viewPerfil() {
             ${[2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${n === p.days_per_week ? 'selected' : ''}>${n} días</option>`).join('')}
           </select>
         </label>
+        ${trainingLocationFieldsetHTML(p.training_location || 'gimnasio', p.home_equipment || [])}
         ${injuriesFieldsetHTML(p.injuries)}
         <p class="field-error" id="profile-error" hidden></p>
         <p class="field-ok" id="profile-ok" hidden>Guardado.</p>
@@ -2278,7 +2350,7 @@ function wireTabEvents() {
     const routine = applyRoutineOverrides(generateRoutine(state.profile, state.exercises, currentRoutineSeed(), extraDaysCount));
     const usedIdsThatDay = new Set(routine[dayIndex].exercises.map((e) => e.id));
     const groupExercises = state.exercises
-      .filter((e) => e.muscle_group === current.muscle_group)
+      .filter((e) => e.muscle_group === current.muscle_group && isEquipmentAvailable(e, state.profile))
       .sort((a, b) => a.sort_order - b.sort_order);
     const currentIdx = groupExercises.findIndex((e) => e.id === current.id);
     let next = null;
@@ -2426,6 +2498,7 @@ function wireTabEvents() {
 
   const profileForm = $('#profile-form');
   if (profileForm) {
+    wireTrainingLocationToggle(profileForm);
     profileForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -2442,6 +2515,8 @@ function wireTabEvents() {
         activity_level: fd.get('activity_level'),
         goal: fd.get('goal'),
         days_per_week: Number(fd.get('days_per_week')),
+        training_location: fd.get('training_location'),
+        home_equipment: fd.getAll('home_equipment'),
         injuries: fd.getAll('injuries'),
       };
       try {
