@@ -86,9 +86,12 @@ usuario ni de las tablas de los otros dos proyectos, y viceversa.
 
 - `gym_profiles` — un perfil por usuario: sexo, altura, fecha de
   nacimiento, nivel de actividad, objetivo, días de entrenamiento, dónde
-  entrena (`training_location`: gimnasio/casa) y, si es casa, qué tiene
-  disponible (`home_equipment`) y, si el usuario lo ha personalizado, qué
-  día de rutina toca cada día de la semana (`weekday_plan`).
+  entrena (`training_location`: gimnasio/casa), qué tiene disponible
+  (`home_equipment`, con un campo de texto libre `home_equipment_other`
+  para material no listado), lesiones o molestias (`injuries`, con un
+  campo de texto libre `injuries_other` para otras no listadas) y, si el
+  usuario lo ha personalizado, qué día de rutina toca cada día de la
+  semana (`weekday_plan`).
 - `gym_measurements` — histórico de mediciones (peso y perímetros) por
   usuario y fecha, una fila por día.
 - `gym_exercises` — catálogo de ejercicios/máquinas (lectura pública,
