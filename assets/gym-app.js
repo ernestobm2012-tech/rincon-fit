@@ -1432,7 +1432,7 @@ function viewAdmin() {
       ${stats.signups.length === 0 ? '<p class="chart-empty">Todavía no hay usuarios registrados.</p>' : `
       <div class="table-scroll">
       <table class="routine-table">
-        <thead><tr><th>Nombre</th><th>Objetivo</th><th>Días/semana</th><th>Alta</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Objetivo</th><th>Días/semana</th><th>Alta</th><th>Nº entradas</th><th>Última entrada</th></tr></thead>
         <tbody>
           ${stats.signups.map((s) => `
             <tr>
@@ -1440,6 +1440,8 @@ function viewAdmin() {
               <td>${GOAL_LABELS[s.goal] || s.goal || '—'}</td>
               <td>${s.days_per_week ?? '—'}</td>
               <td>${s.created_at ? new Date(s.created_at).toLocaleDateString('es-ES') : '—'}</td>
+              <td>${s.login_count ?? 0}</td>
+              <td>${s.last_login ? new Date(s.last_login).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Nunca'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -2688,6 +2690,22 @@ function isPasswordRecoveryLink() {
   return location.hash.includes('type=recovery') || new URLSearchParams(location.search).get('type') === 'recovery';
 }
 
+// Registra en gym_login_events que la app se ha abierto con sesión iniciada,
+// una vez por carga de página (no en cada refresco de token, que también
+// dispara onAuthStateChange con una sesión válida). Para el panel de
+// administración: cuántas veces ha entrado cada usuario y cuándo fue la
+// última. Falla en silencio: no es crítico para poder usar la app.
+let loginEventLogged = false;
+async function recordLoginEvent(session) {
+  if (loginEventLogged || !session) return;
+  loginEventLogged = true;
+  try {
+    await supabase.from('gym_login_events').insert({ user_id: session.user.id });
+  } catch (err) {
+    // No pasa nada si falla: no debe bloquear el uso normal de la app.
+  }
+}
+
 async function init() {
   const recoveryLink = isPasswordRecoveryLink();
   const { data: { session } } = await supabase.auth.getSession();
@@ -2696,6 +2714,7 @@ async function init() {
     state.passwordRecovery = true;
   } else if (session) {
     await loadUserData();
+    recordLoginEvent(session);
   }
   history.replaceState({ tab: state.tab }, '', `#${state.tab}`);
   render();
@@ -2711,6 +2730,7 @@ async function init() {
     }
     if (session) {
       await loadUserData();
+      recordLoginEvent(session);
     } else {
       state.profile = null;
       state.measurements = [];

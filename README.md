@@ -66,11 +66,13 @@ Vercel...).
   tú puedes ver y editar tus propios datos.
 - **Panel de administración** (pestaña "Admin", solo visible para el
   propietario de la app): cuántos usuarios se han registrado en total, en
-  los últimos 7 y 30 días, y el listado de las últimas altas. Se apoya en
-  la función `gym_admin_stats` de Supabase, que comprueba en el servidor
-  que quien llama es el propietario (por su id de usuario) antes de
-  devolver nada — cualquier otra persona autenticada recibe un error, y la
-  pestaña ni siquiera se muestra en su menú.
+  los últimos 7 y 30 días, y un listado de las últimas altas con cuántas
+  veces ha entrado cada una (`gym_login_events`, una fila por carga de la
+  app con sesión iniciada) y cuándo fue la última. Se apoya en la función
+  `gym_admin_stats` de Supabase, que comprueba en el servidor que quien
+  llama es el propietario (por su id de usuario) antes de devolver nada —
+  cualquier otra persona autenticada recibe un error, y la pestaña ni
+  siquiera se muestra en su menú.
 
 ## Base de datos
 
