@@ -58,7 +58,8 @@ Vercel...).
   del ombligo, pecho, brazo, pierna) queda registrada con fecha, con
   gráficos de evolución de peso, cintura, tripa e IMC, y categorías (IMC,
   riesgo por perímetro de cintura) que usan los umbrales específicos por
-  sexo.
+  sexo. Cada fila del histórico se puede editar (por si te equivocas al
+  apuntar un dato) o borrar.
 - **Progreso por ejercicio** adaptado al tipo: peso/reps/series y 1RM
   estimado para ejercicios de fuerza, velocidad y tiempo para los de
   cardio (cinta, bici, elíptica...).
