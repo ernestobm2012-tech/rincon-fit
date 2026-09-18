@@ -34,6 +34,7 @@ const state = {
   selectedRoutineDay: null,
   stretchSectionOpen: false,
   editingWeekdayPlan: false,
+  editingMeasurementId: null,
   adminStats: null,
   adminLoading: false,
   adminError: null,
@@ -1862,20 +1863,26 @@ function viewMedidas() {
     .filter((x) => x.weight_kg != null)
     .map((x) => ({ x: new Date(x.measured_at), y: bmi(Number(x.weight_kg), p.height_cm) }));
 
+  const editing = state.editingMeasurementId
+    ? state.measurements.find((m) => m.id === state.editingMeasurementId)
+    : null;
+  const mv = (key) => (editing && editing[key] != null ? editing[key] : '');
+
   return `
     <section class="panel">
-      <h2>Nueva medición</h2>
-      <form id="measure-form" class="measure-form">
-        <label>Fecha <input type="date" name="measured_at" value="${todayISO()}" max="${todayISO()}" required /></label>
-        <label>Peso (kg) <input type="number" name="weight_kg" step="0.1" min="30" max="400" /></label>
-        <label>Cintura (cm) <input type="number" name="waist_cm" step="0.1" min="30" max="300" /></label>
-        <label>Tripa, encima del ombligo (cm) <input type="number" name="upper_abdomen_cm" step="0.1" min="30" max="300" /></label>
-        <label>Pecho (cm) <input type="number" name="chest_cm" step="0.1" min="30" max="300" /></label>
-        <label>Brazo (cm) <input type="number" name="arm_cm" step="0.1" min="10" max="100" /></label>
-        <label>Pierna (cm) <input type="number" name="leg_cm" step="0.1" min="20" max="150" /></label>
-        <label class="full">Notas <input type="text" name="notes" maxlength="200" /></label>
+      <h2>${editing ? 'Editar medición' : 'Nueva medición'}</h2>
+      <form id="measure-form" class="measure-form" data-editing-id="${editing ? editing.id : ''}">
+        <label>Fecha <input type="date" name="measured_at" value="${editing ? editing.measured_at : todayISO()}" max="${todayISO()}" required /></label>
+        <label>Peso (kg) <input type="number" name="weight_kg" step="0.1" min="30" max="400" value="${mv('weight_kg')}" /></label>
+        <label>Cintura (cm) <input type="number" name="waist_cm" step="0.1" min="30" max="300" value="${mv('waist_cm')}" /></label>
+        <label>Tripa, encima del ombligo (cm) <input type="number" name="upper_abdomen_cm" step="0.1" min="30" max="300" value="${mv('upper_abdomen_cm')}" /></label>
+        <label>Pecho (cm) <input type="number" name="chest_cm" step="0.1" min="30" max="300" value="${mv('chest_cm')}" /></label>
+        <label>Brazo (cm) <input type="number" name="arm_cm" step="0.1" min="10" max="100" value="${mv('arm_cm')}" /></label>
+        <label>Pierna (cm) <input type="number" name="leg_cm" step="0.1" min="20" max="150" value="${mv('leg_cm')}" /></label>
+        <label class="full">Notas <input type="text" name="notes" maxlength="200" value="${escapeHtml(mv('notes'))}" /></label>
         <p class="field-error" id="measure-error" hidden></p>
-        <button type="submit" class="btn-primary">Guardar medición</button>
+        <button type="submit" class="btn-primary">${editing ? 'Guardar cambios' : 'Guardar medición'}</button>
+        ${editing ? `<button type="button" class="btn-ghost" id="cancel-edit-measure">Cancelar</button>` : ''}
       </form>
     </section>
     <section class="panel">
@@ -1903,7 +1910,10 @@ function viewMedidas() {
               <td>${fmt1(r.chest_cm)}</td>
               <td>${fmt1(r.arm_cm)}</td>
               <td>${fmt1(r.leg_cm)}</td>
-              <td><button class="btn-ghost btn-sm" data-delete-measure="${r.id}">Borrar</button></td>
+              <td>
+                <button class="btn-ghost btn-sm" data-edit-measure="${r.id}">Editar</button>
+                <button class="btn-ghost btn-sm" data-delete-measure="${r.id}">Borrar</button>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -2264,9 +2274,13 @@ function wireTabEvents() {
         payload[k] = v ? Number(v) : null;
       });
       payload.notes = fd.get('notes') ? fd.get('notes').toString().trim() : null;
+      const editingId = e.target.dataset.editingId;
       try {
-        const { error } = await supabase.from('gym_measurements').upsert(payload, { onConflict: 'user_id,measured_at' });
+        const { error } = editingId
+          ? await supabase.from('gym_measurements').update(payload).eq('id', editingId)
+          : await supabase.from('gym_measurements').upsert(payload, { onConflict: 'user_id,measured_at' });
         if (error) throw error;
+        state.editingMeasurementId = null;
         await loadUserData();
         render();
       } catch (err) {
@@ -2276,9 +2290,22 @@ function wireTabEvents() {
     });
   }
 
+  $$('[data-edit-measure]').forEach((btn) => btn.addEventListener('click', () => {
+    state.editingMeasurementId = btn.dataset.editMeasure;
+    render();
+    $('#measure-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const cancelEditBtn = $('#cancel-edit-measure');
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', () => {
+    state.editingMeasurementId = null;
+    render();
+  });
+
   $$('[data-delete-measure]').forEach((btn) => btn.addEventListener('click', async () => {
     if (!confirm('¿Borrar esta medición?')) return;
     const id = btn.dataset.deleteMeasure;
+    if (state.editingMeasurementId === id) state.editingMeasurementId = null;
     await supabase.from('gym_measurements').delete().eq('id', id);
     await loadUserData();
     render();
